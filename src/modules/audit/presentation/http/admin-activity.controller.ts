@@ -1,6 +1,8 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 
+import { ApiZodQuery } from "../../../../shared/presentation/http/api-zod.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import {
   AuthGuard,
@@ -26,6 +28,8 @@ const activityQuerySchema = z.object({
 type ActivityQueryParams = z.infer<typeof activityQuerySchema>;
 
 /** Registo de atividade (só a administração geral). */
+@ApiTags("Administração — atividade")
+@ApiBearerAuth()
 @Controller("admin/activity")
 @UseGuards(AuthGuard, PermissionsGuard)
 @RequirePermissions(Permission.SUPER_ADMIN)
@@ -33,6 +37,8 @@ export class AdminActivityController {
   constructor(private readonly listActivity: ListActivityUseCase) {}
 
   @Get()
+  @ApiOperation({ summary: "Lista a atividade" })
+  @ApiZodQuery(activityQuerySchema)
   list(@Query(new ZodValidationPipe(activityQuerySchema)) query: ActivityQueryParams) {
     return this.listActivity.execute(query);
   }

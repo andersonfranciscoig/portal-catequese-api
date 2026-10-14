@@ -11,7 +11,9 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 
+import { ApiZodBody, ApiZodQuery } from "../../../../shared/presentation/http/api-zod.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import {
   AuthGuard,
@@ -38,6 +40,8 @@ import {
 } from "./platform.schemas.js";
 
 /** Administração: fase de lançamento, estado do portal e pedidos de acesso. */
+@ApiTags("Administração — plataforma")
+@ApiBearerAuth()
 @Controller("admin/platform")
 @UseGuards(AuthGuard, PermissionsGuard)
 @RequirePermissions(Permission.SUPER_ADMIN)
@@ -51,12 +55,15 @@ export class AdminPlatformController {
   ) {}
 
   @Get("status")
+  @ApiOperation({ summary: "Estado completo e pedidos por decidir" })
   status() {
     return this.getStatus.execute();
   }
 
   /** Abrir o portal a todos (fim da fase de testes) ou voltar aos testes. */
   @Put("launch")
+  @ApiOperation({ summary: "Define a fase de lançamento" })
+  @ApiZodBody(launchModeSchema)
   launch(
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(launchModeSchema)) body: LaunchModeBody,
@@ -66,6 +73,8 @@ export class AdminPlatformController {
 
   /** Encerrar ou reabrir o portal. */
   @Put("portal")
+  @ApiOperation({ summary: "Encerra ou reabre o portal" })
+  @ApiZodBody(portalStatusSchema)
   portal(
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(portalStatusSchema)) body: PortalStatusBody,
@@ -74,6 +83,8 @@ export class AdminPlatformController {
   }
 
   @Get("access-requests")
+  @ApiOperation({ summary: "Lista pedidos de acesso" })
+  @ApiZodQuery(accessRequestListSchema)
   accessRequests(
     @Query(new ZodValidationPipe(accessRequestListSchema)) query: AccessRequestListQuery,
   ) {
@@ -82,6 +93,9 @@ export class AdminPlatformController {
 
   @Post("access-requests/:id/decision")
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Aceita ou recusa um pedido de acesso" })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiZodBody(decisionSchema)
   decide(
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("id", ParseUUIDPipe) id: string,

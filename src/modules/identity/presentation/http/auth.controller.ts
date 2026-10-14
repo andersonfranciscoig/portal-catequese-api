@@ -9,6 +9,7 @@ import {
   Post,
   UseGuards,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import type { AccessTokenClaims } from "../../application/ports/access-token-issuer.js";
 import { AuthenticateUseCase } from "../../application/use-cases/authenticate.use-case.js";
@@ -18,6 +19,7 @@ import { RefreshSessionUseCase } from "../../application/use-cases/refresh-sessi
 import { RegisterAccountUseCase } from "../../application/use-cases/register-account.use-case.js";
 import { SignOutUseCase } from "../../application/use-cases/sign-out.use-case.js";
 import { UpdateProfileUseCase } from "../../application/use-cases/update-profile.use-case.js";
+import { ApiZodBody } from "../../../../shared/presentation/http/api-zod.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import { CurrentAccount } from "./decorators/current-account.decorator.js";
 import {
@@ -34,6 +36,7 @@ import {
 } from "./dtos/auth.schemas.js";
 import { AuthGuard } from "./guards/auth.guard.js";
 
+@ApiTags("Conta")
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -48,6 +51,8 @@ export class AuthController {
 
   /** Cria a conta e devolve logo a sessão. */
   @Post("register")
+  @ApiOperation({ summary: "Cria a conta e devolve a sessão" })
+  @ApiZodBody(registerSchema)
   register(
     @Body(new ZodValidationPipe(registerSchema)) body: RegisterBody,
     @Headers("user-agent") userAgent?: string,
@@ -57,6 +62,8 @@ export class AuthController {
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Entra com telefone ou email" })
+  @ApiZodBody(loginSchema)
   login(
     @Body(new ZodValidationPipe(loginSchema)) body: LoginBody,
     @Headers("user-agent") userAgent?: string,
@@ -66,6 +73,8 @@ export class AuthController {
 
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Renova a sessão" })
+  @ApiZodBody(refreshSchema)
   refresh(
     @Body(new ZodValidationPipe(refreshSchema)) body: RefreshBody,
     @Headers("user-agent") userAgent?: string,
@@ -75,12 +84,16 @@ export class AuthController {
 
   @Post("logout")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Termina a sessão deste dispositivo" })
+  @ApiZodBody(refreshSchema)
   async logout(@Body(new ZodValidationPipe(refreshSchema)) body: RefreshBody) {
     await this.signOut.execute(body);
   }
 
   @Get("me")
   @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Conta autenticada" })
   me(@CurrentAccount() account: AccessTokenClaims) {
     return this.currentAccount.execute({ accountId: account.accountId });
   }
@@ -88,6 +101,9 @@ export class AuthController {
   /** O próprio altera nome, telefone ou email. */
   @Patch("me")
   @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Altera nome, telefone ou email" })
+  @ApiZodBody(profileSchema)
   updateMe(
     @CurrentAccount() account: AccessTokenClaims,
     @Body(new ZodValidationPipe(profileSchema)) body: ProfileBody,
@@ -98,6 +114,9 @@ export class AuthController {
   @Post("me/password")
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Muda a palavra-passe" })
+  @ApiZodBody(changePasswordSchema)
   async updatePassword(
     @CurrentAccount() account: AccessTokenClaims,
     @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordBody,

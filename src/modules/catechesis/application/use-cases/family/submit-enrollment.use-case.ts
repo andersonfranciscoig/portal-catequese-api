@@ -1,9 +1,11 @@
+import type { EventBus } from "../../../../../shared/application/event-bus.js";
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import {
   ADULT_AGE,
   formatLevel,
+  slotRequirement,
   type CatechesisLevel,
   type EnrollmentType,
   type Gender,
@@ -13,6 +15,7 @@ import {
 import { Catechumen } from "../../../domain/catechumen.js";
 import { ageAt, isIsoDate, luandaToday } from "../../../domain/dates.js";
 import { Enrollment } from "../../../domain/enrollment.js";
+import { EnrollmentSubmitted } from "../../../domain/events/enrollment-submitted.js";
 import {
   CalendarNotDefinedError,
   EnrollmentAlreadyExistsError,
@@ -46,6 +49,8 @@ export interface SubmitEnrollmentInput {
     previousParish?: string;
     notes?: string;
   };
+  /** A família entrega os documentos em papel na secretaria (em vez de os anexar). */
+  documentsInPerson?: boolean;
 }
 
 const sameName = (a: string, b: string) =>
@@ -67,6 +72,7 @@ export class SubmitEnrollmentUseCase {
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
     private readonly notifier: Notifier,
+    private readonly events: EventBus,
   ) {}
 
   async execute({
@@ -74,6 +80,7 @@ export class SubmitEnrollmentUseCase {
     guardian,
     catechumen: data,
     catechesis,
+    documentsInPerson,
   }: SubmitEnrollmentInput): Promise<EnrollmentView> {
     const person = await this.access.applicant(accountId);
     const forChild = Boolean(guardian);
@@ -94,6 +101,8 @@ export class SubmitEnrollmentUseCase {
     if (!forChild && age < ADULT_AGE) {
       throw new InvalidEnrollmentError("Menores de 18 anos são inscritos pelo encarregado.");
     }
+    const slotProblem = slotRequirement(catechesis.preferredSlot, age);
+    if (slotProblem) throw new InvalidEnrollmentError(slotProblem);
 
     const known = await this.catechumens.findAccessibleBy(accountId);
     const existing = forChild
@@ -135,10 +144,12 @@ export class SubmitEnrollmentUseCase {
       catechumenId: catechumen.id.value,
       catecheticalYear: calendar.label,
       submittedBy: accountId,
+      documentsInPerson,
       now,
     });
     await this.catechumens.save(catechumen);
     await this.enrollments.save(enrollment);
+    await this.events.publish([new EnrollmentSubmitted(enrollment, catechumen)]);
     await this.activity.record({
       actorId: accountId,
       category: "ENROLLMENT",
@@ -150,7 +161,7 @@ export class SubmitEnrollmentUseCase {
       kind: "catechesis.enrollment_submitted",
       title: "Nova matrícula para analisar",
       body: `${catechumen.fullName} · ${formatLevel(enrollment.level)} (${enrollment.code})`,
-      link: "/dashboard/matriculas",
+      link: `/dashboard/matriculas?matricula=${enrollment.id.value}`,
       exceptAccountId: accountId,
     });
     return toEnrollmentView(enrollment, catechumen.fullName);

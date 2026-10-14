@@ -6,19 +6,25 @@ import type {
   ClassCatechist as ClassCatechistRow,
   Catechumen as CatechumenRow,
   Enrollment as EnrollmentRow,
+  EnrollmentDocument as EnrollmentDocumentRow,
+  Prisma,
 } from "../../../../../shared/infrastructure/database/generated/client.js";
 import { PrismaService } from "../../../../../shared/infrastructure/database/prisma.service.js";
 import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
 import { Catechumen } from "../../../domain/catechumen.js";
 import type { ClassAttendance } from "../../../domain/class-attendance.js";
-import { Enrollment } from "../../../domain/enrollment.js";
+import type { AllowedContentType } from "../../../../../shared/application/file-storage.js";
+import type { EnrollmentStatus } from "../../../domain/catechesis.js";
+import { Enrollment, type EnrollmentEvent } from "../../../domain/enrollment.js";
+import { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
 import {
   AttendanceRepository,
   CalendarRepository,
   CatechumenRepository,
   ClassRepository,
+  EnrollmentDocumentRepository,
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
@@ -149,9 +155,39 @@ function toEnrollment(row: EnrollmentRow) {
       decidedBy: orUndefined(row.decidedBy),
       decidedAt: orUndefined(row.decidedAt),
       updatedAt: row.updatedAt,
+      documentsInPerson: row.documentsInPerson,
+      reviewNote: orUndefined(row.reviewNote),
+      previousEnrollmentId: orUndefined(row.previousEnrollmentId),
+      history: readHistory(row.history),
     },
     UniqueId.from(row.id),
   );
+}
+
+interface StoredEvent {
+  status: EnrollmentStatus;
+  at: string;
+  actorId?: string;
+  note?: string;
+}
+
+function readHistory(value: Prisma.JsonValue): EnrollmentEvent[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown as StoredEvent[]).map((event) => ({
+    status: event.status,
+    at: new Date(event.at),
+    actorId: event.actorId,
+    note: event.note,
+  }));
+}
+
+function writeHistory(history: readonly EnrollmentEvent[]): Prisma.InputJsonValue {
+  return history.map((event) => ({
+    status: event.status,
+    at: event.at.toISOString(),
+    ...(event.actorId ? { actorId: event.actorId } : {}),
+    ...(event.note ? { note: event.note } : {}),
+  }));
 }
 
 @Injectable()
@@ -219,6 +255,9 @@ export class PrismaEnrollmentRepository extends EnrollmentRepository {
       decidedBy: enrollment.decidedBy ?? null,
       decidedAt: enrollment.decidedAt ?? null,
       updatedAt: enrollment.updatedAt,
+      documentsInPerson: enrollment.documentsInPerson,
+      reviewNote: enrollment.reviewNote ?? null,
+      history: writeHistory(enrollment.history),
     };
     await this.prisma.enrollment.upsert({
       where: { id: enrollment.id.value },
@@ -229,6 +268,7 @@ export class PrismaEnrollmentRepository extends EnrollmentRepository {
         catecheticalYear: enrollment.catecheticalYear,
         submittedBy: enrollment.submittedBy,
         submittedAt: enrollment.submittedAt,
+        previousEnrollmentId: enrollment.previousEnrollmentId ?? null,
         ...data,
       },
       update: data,
@@ -434,5 +474,69 @@ export class PrismaEvaluationRepository extends EvaluationRepository {
         });
       }),
     );
+  }
+}
+
+function toDocument(row: EnrollmentDocumentRow) {
+  return EnrollmentDocument.restore(
+    {
+      enrollmentId: row.enrollmentId,
+      kind: row.kind,
+      file: {
+        key: row.fileKey,
+        name: row.fileName,
+        size: row.fileSize,
+        contentType: row.contentType as AllowedContentType,
+      },
+      uploadedBy: row.uploadedBy,
+      uploadedAt: row.uploadedAt,
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+@Injectable()
+export class PrismaEnrollmentDocumentRepository extends EnrollmentDocumentRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.enrollmentDocument.findUnique({ where: { id: id.value } });
+    return row ? toDocument(row) : null;
+  }
+
+  async listForEnrollment(enrollmentId: string) {
+    if (!UUID.test(enrollmentId)) return [];
+    const rows = await this.prisma.enrollmentDocument.findMany({
+      where: { enrollmentId },
+      orderBy: { uploadedAt: "asc" },
+    });
+    return rows.map(toDocument);
+  }
+
+  async save(document: EnrollmentDocument) {
+    const where = {
+      enrollmentId_kind: { enrollmentId: document.enrollmentId, kind: document.kind },
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const previous = await tx.enrollmentDocument.findUnique({ where });
+      if (previous) await tx.enrollmentDocument.delete({ where: { id: previous.id } });
+      await tx.enrollmentDocument.create({
+        data: {
+          id: document.id.value,
+          enrollmentId: document.enrollmentId,
+          kind: document.kind,
+          fileKey: document.file.key,
+          fileName: document.file.name,
+          fileSize: document.file.size,
+          contentType: document.file.contentType,
+          uploadedBy: document.uploadedBy,
+          uploadedAt: document.uploadedAt,
+        },
+      });
+      return previous ? toDocument(previous) : null;
+    });
   }
 }

@@ -101,3 +101,44 @@ export const SLOT_LABEL: Record<SessionSlot, string> = {
 export function formatLevel(level: CatechesisLevel): string {
   return LEVEL_LABEL[level];
 }
+
+/** Idade a partir da qual se passa para o grupo da tarde de sábado. */
+export const TEEN_AGE = 15;
+
+/** Porque o período não serve para esta idade (ou `null` se serve). */
+export function slotRequirement(slot: SessionSlot, age: number): string | null {
+  if (slot === "SATURDAY_MORNING" && age >= TEEN_AGE) {
+    return `A manhã de sábado é para crianças até aos ${TEEN_AGE - 1} anos.`;
+  }
+  if (slot === "SATURDAY_AFTERNOON" && age < TEEN_AGE) {
+    return `A tarde de sábado é a partir dos ${TEEN_AGE} anos.`;
+  }
+  return null;
+}
+
+/** Período de sábado adequado à idade. */
+export function suggestSlot(age: number): SessionSlot {
+  return age >= TEEN_AGE ? "SATURDAY_AFTERNOON" : "SATURDAY_MORNING";
+}
+
+const LEVEL_ORDER = Object.values(CatechesisLevel);
+
+/** Nível do ano seguinte (`null` no fim do percurso: Crisma · 3.º ano). */
+export function nextLevel(level: CatechesisLevel): CatechesisLevel | null {
+  return LEVEL_ORDER[LEVEL_ORDER.indexOf(level) + 1] ?? null;
+}
+
+/** "2026/2027" → "2025/2026" */
+export function previousYearLabel(label: string): string {
+  const start = Number(label.slice(0, 4));
+  return `${start - 1}/${start}`;
+}
+
+export type CatechesisStage = "BAPTISM" | "COMMUNION" | "BIBLICAL" | "CONFIRMATION";
+
+export function stageOf(level: CatechesisLevel): CatechesisStage {
+  if (level.startsWith("BAPTISM")) return "BAPTISM";
+  if (level.startsWith("COMMUNION")) return "COMMUNION";
+  if (level === "BIBLICAL") return "BIBLICAL";
+  return "CONFIRMATION";
+}

@@ -3,7 +3,13 @@
  * protocolo (HTTP, mensagens…) sem o domínio conhecer esse protocolo.
  */
 export type DomainErrorKind =
-  "validation" | "conflict" | "unauthorized" | "forbidden" | "not_found";
+  | "validation"
+  | "conflict"
+  | "unauthorized"
+  | "forbidden"
+  | "not_found"
+  /** Um serviço de que a ação depende (ex.: armazenamento) não respondeu. */
+  | "unavailable";
 
 /** Erro esperado de uma regra de negócio (nunca um bug). */
 export abstract class DomainError extends Error {

@@ -11,6 +11,14 @@ import {
   InvalidEnrollmentError,
 } from "./errors/catechesis.errors.js";
 
+/** Uma mudança de estado (o histórico que a coordenação vê). */
+export interface EnrollmentEvent {
+  status: EnrollmentStatus;
+  at: Date;
+  actorId?: string;
+  note?: string;
+}
+
 export interface EnrollmentProps {
   /** CRP-2026-48213 */
   code: string;
@@ -28,6 +36,13 @@ export interface EnrollmentProps {
   decidedBy?: string;
   decidedAt?: Date;
   updatedAt: Date;
+  /** A família entrega os documentos em papel na secretaria. */
+  documentsInPerson: boolean;
+  /** Motivo da recusa ou documentos em falta (mostrado à família). */
+  reviewNote?: string;
+  /** Confirmação: a matrícula do ano anterior que esta continua. */
+  previousEnrollmentId?: string;
+  history: EnrollmentEvent[];
 }
 
 export type SubmitEnrollmentProps = Pick<
@@ -41,20 +56,32 @@ export type SubmitEnrollmentProps = Pick<
   | "previousParish"
   | "notes"
   | "submittedBy"
-> & { now: Date };
+> & { now: Date; documentsInPerson?: boolean };
 
-/** Estados em que a coordenação ainda pode decidir. */
+export type ConfirmFromPreviousProps = Pick<
+  EnrollmentProps,
+  "code" | "catechumenId" | "catecheticalYear" | "level" | "preferredSlot" | "submittedBy"
+> & { previous: Enrollment; now: Date };
+
+const S = EnrollmentStatus;
+/** Estados em que a coordenação ainda está a decidir. */
 const OPEN: EnrollmentStatus[] = [
-  EnrollmentStatus.SUBMITTED,
-  EnrollmentStatus.UNDER_REVIEW,
-  EnrollmentStatus.APPROVED,
-  EnrollmentStatus.PENDING_CONFIRMATION,
-  EnrollmentStatus.WAITLIST,
+  S.SUBMITTED,
+  S.UNDER_REVIEW,
+  S.APPROVED,
+  S.PENDING_CONFIRMATION,
+  S.WAITLIST,
 ];
 
 /** Matrícula de um catequizando num ano catequético. */
 export class Enrollment extends AggregateRoot<EnrollmentProps> {
-  static submit({ now, previousParish, notes, ...props }: SubmitEnrollmentProps): Enrollment {
+  static submit({
+    now,
+    previousParish,
+    notes,
+    documentsInPerson,
+    ...props
+  }: SubmitEnrollmentProps): Enrollment {
     const parish = previousParish?.trim() || undefined;
     if (props.type === EnrollmentType.TRANSFER && !parish) {
       throw new InvalidEnrollmentError("Indique a paróquia de origem da transferência.");
@@ -66,14 +93,40 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
       ...props,
       previousParish: parish,
       notes: notes?.trim() || undefined,
-      status: EnrollmentStatus.SUBMITTED,
+      status: S.SUBMITTED,
       submittedAt: now,
       updatedAt: now,
+      documentsInPerson: documentsInPerson ?? false,
+      history: [{ status: S.SUBMITTED, at: now, actorId: props.submittedBy }],
+    });
+  }
+
+  /**
+   * Confirmação de quem frequentou no ano anterior: já é conhecido, por isso
+   * fica logo aprovada (falta só a turma).
+   */
+  static confirmFromPrevious({ previous, now, ...props }: ConfirmFromPreviousProps): Enrollment {
+    return new Enrollment({
+      ...props,
+      type: EnrollmentType.RENEWAL,
+      status: S.APPROVED,
+      submittedAt: now,
+      updatedAt: now,
+      documentsInPerson: false,
+      previousEnrollmentId: previous.id.value,
+      history: [
+        {
+          status: S.APPROVED,
+          at: now,
+          actorId: props.submittedBy,
+          note: `Confirmação de ${previous.code}`,
+        },
+      ],
     });
   }
 
   static restore(props: EnrollmentProps, id: UniqueId): Enrollment {
-    return new Enrollment({ ...props }, id);
+    return new Enrollment({ ...props, history: [...props.history] }, id);
   }
 
   get code() {
@@ -121,35 +174,101 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
   get updatedAt() {
     return this.props.updatedAt;
   }
+  get documentsInPerson() {
+    return this.props.documentsInPerson;
+  }
+  get reviewNote() {
+    return this.props.reviewNote;
+  }
+  get previousEnrollmentId() {
+    return this.props.previousEnrollmentId;
+  }
+  get history(): readonly EnrollmentEvent[] {
+    return this.props.history;
+  }
 
   get isConfirmed() {
-    return this.props.status === EnrollmentStatus.CONFIRMED;
+    return this.props.status === S.CONFIRMED;
+  }
+
+  /** Ainda se podem enviar documentos (não recusada). */
+  get acceptsDocuments() {
+    return this.props.status !== S.REJECTED;
+  }
+
+  approve(actorId: string, now: Date) {
+    this.move(S.APPROVED, [S.SUBMITTED, S.UNDER_REVIEW, S.PENDING_CONFIRMATION, S.WAITLIST], {
+      actorId,
+      now,
+    });
+  }
+
+  /** Faltam documentos: a família é avisada com o que falta. */
+  requestDocuments(actorId: string, now: Date, note?: string) {
+    this.move(S.PENDING_CONFIRMATION, [S.SUBMITTED, S.UNDER_REVIEW, S.APPROVED], {
+      actorId,
+      now,
+      note: note?.trim() || undefined,
+      reviewNote: note?.trim() || undefined,
+    });
+  }
+
+  waitlist(actorId: string, now: Date) {
+    this.move(S.WAITLIST, [S.SUBMITTED, S.UNDER_REVIEW, S.APPROVED, S.PENDING_CONFIRMATION], {
+      actorId,
+      now,
+    });
+  }
+
+  /** Volta a analisar uma matrícula recusada ou em lista de espera. */
+  reopen(actorId: string, now: Date) {
+    this.move(S.UNDER_REVIEW, [S.REJECTED, S.WAITLIST], { actorId, now, classId: null });
   }
 
   /** A coordenação confirma a matrícula numa turma. */
-  confirm(classId: string, actorId: string, now: Date) {
-    this.assertOpen();
-    Object.assign(this.props, {
-      status: EnrollmentStatus.CONFIRMED,
-      classId,
-      decidedBy: actorId,
-      decidedAt: now,
-      updatedAt: now,
+  confirm(classId: string, actorId: string, now: Date, note?: string) {
+    this.move(S.CONFIRMED, OPEN, { actorId, now, note, classId, decided: true });
+  }
+
+  reject(actorId: string, now: Date, reason?: string) {
+    const note = reason?.trim() || undefined;
+    this.move(S.REJECTED, OPEN, {
+      actorId,
+      now,
+      note,
+      reviewNote: note,
+      classId: null,
+      decided: true,
     });
   }
 
-  reject(actorId: string, now: Date) {
-    this.assertOpen();
-    Object.assign(this.props, {
-      status: EnrollmentStatus.REJECTED,
-      classId: undefined,
-      decidedBy: actorId,
-      decidedAt: now,
-      updatedAt: now,
+  private move(
+    status: EnrollmentStatus,
+    from: EnrollmentStatus[],
+    change: {
+      actorId: string;
+      now: Date;
+      note?: string;
+      reviewNote?: string;
+      /** `null` retira a turma. */
+      classId?: string | null;
+      decided?: boolean;
+    },
+  ) {
+    if (!from.includes(this.props.status)) throw new EnrollmentAlreadyDecidedError();
+    this.props.status = status;
+    this.props.updatedAt = change.now;
+    this.props.reviewNote = change.reviewNote;
+    if (change.classId !== undefined) this.props.classId = change.classId ?? undefined;
+    if (change.decided) {
+      this.props.decidedBy = change.actorId;
+      this.props.decidedAt = change.now;
+    }
+    this.props.history.push({
+      status,
+      at: change.now,
+      actorId: change.actorId,
+      note: change.note,
     });
-  }
-
-  private assertOpen() {
-    if (!OPEN.includes(this.props.status)) throw new EnrollmentAlreadyDecidedError();
   }
 }

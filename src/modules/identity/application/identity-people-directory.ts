@@ -1,3 +1,4 @@
+import type { NotifiedPermission } from "../../../shared/application/notifier.js";
 import {
   PeopleDirectory,
   type PersonSnapshot,
@@ -45,7 +46,7 @@ export class IdentityPeopleDirectory extends PeopleDirectory {
     return unique.flatMap((id) => found.get(id) ?? []);
   }
 
-  async idsWithPermission(permission: "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS") {
+  async idsWithPermission(permission: NotifiedPermission) {
     // As candidatas têm a permissão ou são administração geral; o domínio decide
     // se está em vigor (ex.: aprovar catequistas exige também a coordenação).
     const candidates = await this.accounts.findActiveWithAnyPermission([

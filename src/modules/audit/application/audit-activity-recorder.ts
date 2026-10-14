@@ -6,7 +6,7 @@ import type { Clock } from "../../../shared/domain/clock.js";
 import { ActivityEntry } from "../domain/activity-entry.js";
 import type { ActivityRepository } from "../domain/repositories/activity.repository.js";
 
-/** Implementação, por este módulo, da porta partilhada de registo de atividade. */
+
 export class AuditActivityRecorder extends ActivityRecorder {
   constructor(
     private readonly entries: ActivityRepository,

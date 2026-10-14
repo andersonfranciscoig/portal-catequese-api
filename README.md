@@ -64,6 +64,7 @@ pnpm db:up                    # PostgreSQL 16 na porta 5433
 pnpm db:migrate               # cria as tabelas
 pnpm db:seed                  # primeira administração + configuração da plataforma
 pnpm start:dev                # http://localhost:3333/api/v1
+                              # documentação: http://localhost:3333/docs
 ```
 
 ## Scripts

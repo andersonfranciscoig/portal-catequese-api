@@ -9,9 +9,11 @@ import {
   type AccessRequestApprovedEvent,
 } from "../../shared/application/integration-events.js";
 import { LaunchAccessPolicy } from "../../shared/application/launch-access-policy.js";
+import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { AccountDirectoryService } from "./application/account-directory.service.js";
+import { IdentityPeopleDirectory } from "./application/identity-people-directory.js";
 import { AccessTokenIssuer } from "./application/ports/access-token-issuer.js";
 import { RefreshTokenGenerator } from "./application/ports/refresh-token-generator.js";
 import { SessionIssuer } from "./application/session-issuer.js";
@@ -92,6 +94,11 @@ const AUDIT = ActivityRecorder;
     },
     provideUseCase(SignInPolicy, [LaunchAccessPolicy]),
     provideUseCase(AccountDirectoryService, [AccountRepository]),
+    {
+      provide: PeopleDirectory,
+      inject: [AccountRepository],
+      useFactory: (accounts: AccountRepository) => new IdentityPeopleDirectory(accounts),
+    },
     // Conta própria
     provideUseCase(RegisterAccountUseCase, [
       AccountRepository,
@@ -137,13 +144,14 @@ const AUDIT = ActivityRecorder;
     PermissionsGuard,
   ],
   // Os outros módulos protegem rotas com os guards (que precisam do verificador
-  // de tokens e das contas) e consultam nomes pelo diretório.
+  // de tokens e das contas) e consultam nomes e papéis pelos diretórios.
   exports: [
     AuthGuard,
     PermissionsGuard,
     AccessTokenIssuer,
     AccountRepository,
     AccountDirectoryService,
+    PeopleDirectory,
   ],
 })
 export class IdentityModule implements OnModuleInit {

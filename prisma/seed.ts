@@ -1,13 +1,10 @@
 import "dotenv/config";
-
 import { randomUUID } from "node:crypto";
-
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
 import { PrismaClient } from "../src/shared/infrastructure/database/generated/client.js";
 
-/** O mesmo custo usado pela aplicação (BcryptPasswordHasher). */
 const BCRYPT_ROUNDS = 12;
 
 function required(name: string): string {
@@ -16,14 +13,12 @@ function required(name: string): string {
   return value;
 }
 
-/** Telemóvel angolano em E.164 (+2449XXXXXXXX), como no domínio. */
 function angolanPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "").replace(/^(00)?244/, "");
   if (!/^9\d{8}$/.test(digits)) throw new Error(`SEED_ADMIN_PHONE inválido: ${raw}`);
   return `+244${digits}`;
 }
 
-/** As mesmas regras da aplicação: 8+ caracteres, letras e números, até 72 bytes. */
 function assertStrongPassword(password: string) {
   if (password.length < 8 || !/\d/.test(password) || !/[a-zA-Z]/.test(password)) {
     throw new Error("SEED_ADMIN_PASSWORD: use pelo menos 8 caracteres, com letras e números.");
@@ -33,13 +28,6 @@ function assertStrongPassword(password: string) {
   }
 }
 
-/**
- * Prepara a base de dados:
- * - a primeira conta de administração geral (sem ela, ninguém gere o portal);
- * - a configuração da plataforma (fase de testes, portal aberto).
- * Idempotente: pode correr várias vezes. Se a conta já existir, garante só que é
- * administração ativa — não altera a palavra-passe.
- */
 async function main() {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: required("DATABASE_URL") }),
@@ -72,12 +60,10 @@ async function main() {
       await prisma.account.create({
         data: {
           id: randomUUID(),
-          // O tipo de conta não limita a administração (que tem todas as permissões).
           roles: ["GUARDIAN"],
           fullName,
           phone,
           email,
-          // Só o hash é guardado; a palavra-passe em claro nunca chega à base de dados.
           passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
           permissions: ["SUPER_ADMIN"],
           status: "ACTIVE",
@@ -95,6 +81,20 @@ async function main() {
       create: { id: "platform", launchMode: "BETA", portalOpen: true },
     });
     console.log("Plataforma pronta (fase de testes, portal aberto).");
+
+    // Só cria: datas alteradas pela coordenação não são repostas.
+    await prisma.catecheticalCalendar.upsert({
+      where: { id: "catechesis" },
+      update: {},
+      create: {
+        id: "catechesis",
+        label: "2026/2027",
+        startsOn: "2026-09-26",
+        endsOn: "2027-07-03",
+        updatedAt: now,
+      },
+    });
+    console.log("Ano catequético 2026/2027 definido.");
   } finally {
     await prisma.$disconnect();
   }

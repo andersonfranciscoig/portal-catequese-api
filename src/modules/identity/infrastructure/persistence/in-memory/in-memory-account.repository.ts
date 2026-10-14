@@ -18,6 +18,10 @@ export class InMemoryAccountRepository extends AccountRepository {
     return this.items.get(id.value) ?? null;
   }
 
+  async findByIds(ids: UniqueId[]) {
+    return ids.flatMap((id) => this.items.get(id.value) ?? []);
+  }
+
   async findByEmail(email: Email) {
     return [...this.items.values()].find((item) => item.email?.equals(email)) ?? null;
   }

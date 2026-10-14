@@ -1,0 +1,221 @@
+// Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
+// As contas (encarregados, adultos, catequistas) vivem no módulo de identidade:
+// aqui só se guardam os ids, sem chaves estrangeiras entre esquemas.
+
+enum CatechesisLevel {
+  BAPTISM_PRE
+  BAPTISM_1
+  BAPTISM_2
+  BAPTISM_3
+  COMMUNION_PRE
+  COMMUNION_1
+  COMMUNION_2
+  COMMUNION_3
+  BIBLICAL
+  CONFIRMATION_1
+  CONFIRMATION_2
+  CONFIRMATION_3
+
+  @@schema("catechesis")
+}
+
+enum SessionSlot {
+  SATURDAY_MORNING
+  SATURDAY_AFTERNOON
+  SUNDAY_AFTER_MASS
+
+  @@schema("catechesis")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+
+  @@schema("catechesis")
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  GRANDPARENT
+  UNCLE_AUNT
+  OTHER
+
+  @@schema("catechesis")
+}
+
+enum EnrollmentStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+  WAITLIST
+
+  @@schema("catechesis")
+}
+
+enum EnrollmentType {
+  NEW
+  RENEWAL
+  TRANSFER
+
+  @@schema("catechesis")
+}
+
+enum ClassCatechistRole {
+  LEAD
+  ASSISTANT
+
+  @@schema("catechesis")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  JUSTIFIED
+
+  @@schema("catechesis")
+}
+
+enum YearOutcome {
+  PASSED
+  REPEAT
+
+  @@schema("catechesis")
+}
+
+/// Ano catequético em curso (datas definidas pela coordenação).
+model CatecheticalCalendar {
+  id        String   @id
+  label     String
+  startsOn  String   @map("starts_on")
+  endsOn    String   @map("ends_on")
+  updatedAt DateTime @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("calendar")
+  @@schema("catechesis")
+}
+
+model Catechumen {
+  id                   String                @id @db.Uuid
+  fullName             String                @map("full_name")
+  birthDate            String                @map("birth_date")
+  gender               Gender
+  address              String?
+  baptized             Boolean
+  firstCommunion       Boolean               @map("first_communion")
+  /// Conta do encarregado (menores).
+  guardianAccountId    String?               @map("guardian_account_id") @db.Uuid
+  guardianRelationship GuardianRelationship? @map("guardian_relationship")
+  /// Conta própria (adultos inscritos por si).
+  accountId            String?               @map("account_id") @db.Uuid
+  createdAt            DateTime              @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @map("updated_at") @db.Timestamptz(3)
+
+  enrollments Enrollment[]
+
+  @@index([guardianAccountId])
+  @@index([accountId])
+  @@map("catechumens")
+  @@schema("catechesis")
+}
+
+model Enrollment {
+  id               String           @id @db.Uuid
+  code             String           @unique
+  catechumenId     String           @map("catechumen_id") @db.Uuid
+  catecheticalYear String           @map("catechetical_year")
+  level            CatechesisLevel
+  type             EnrollmentType
+  status           EnrollmentStatus
+  preferredSlot    SessionSlot      @map("preferred_slot")
+  previousParish   String?          @map("previous_parish")
+  notes            String?
+  submittedBy      String           @map("submitted_by") @db.Uuid
+  submittedAt      DateTime         @map("submitted_at") @db.Timestamptz(3)
+  classId          String?          @map("class_id") @db.Uuid
+  decidedBy        String?          @map("decided_by") @db.Uuid
+  decidedAt        DateTime?        @map("decided_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @map("updated_at") @db.Timestamptz(3)
+
+  catechumen Catechumen       @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+  klass      CatechesisClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  /// Uma matrícula por catequizando em cada ano.
+  @@unique([catechumenId, catecheticalYear])
+  @@index([catecheticalYear, status])
+  @@index([classId])
+  @@index([submittedBy])
+  @@map("enrollments")
+  @@schema("catechesis")
+}
+
+model CatechesisClass {
+  id               String          @id @db.Uuid
+  catecheticalYear String          @map("catechetical_year")
+  level            CatechesisLevel
+  section          String
+  slot             SessionSlot
+  startTime        String?         @map("start_time")
+  room             String
+  capacity         Int
+  createdAt        DateTime        @map("created_at") @db.Timestamptz(3)
+
+  catechists  ClassCatechist[]
+  enrollments Enrollment[]
+  attendance  AttendanceRecord[]
+  evaluations Evaluation[]
+
+  @@unique([catecheticalYear, level, section])
+  @@map("classes")
+  @@schema("catechesis")
+}
+
+model ClassCatechist {
+  classId   String             @map("class_id") @db.Uuid
+  accountId String             @map("account_id") @db.Uuid
+  role      ClassCatechistRole
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, accountId])
+  @@index([accountId])
+  @@map("class_catechists")
+  @@schema("catechesis")
+}
+
+model AttendanceRecord {
+  classId      String           @map("class_id") @db.Uuid
+  catechumenId String           @map("catechumen_id") @db.Uuid
+  date         String
+  status       AttendanceStatus
+  recordedBy   String           @map("recorded_by") @db.Uuid
+  recordedAt   DateTime         @map("recorded_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, date, catechumenId])
+  @@index([catechumenId])
+  @@map("attendance")
+  @@schema("catechesis")
+}
+
+model Evaluation {
+  classId      String       @map("class_id") @db.Uuid
+  catechumenId String       @map("catechumen_id") @db.Uuid
+  t1           Float?
+  t2           Float?
+  t3           Float?
+  outcome      YearOutcome?
+  updatedBy    String       @map("updated_by") @db.Uuid
+  updatedAt    DateTime     @map("updated_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, catechumenId])
+  @@map("evaluations")
+  @@schema("catechesis")
+}

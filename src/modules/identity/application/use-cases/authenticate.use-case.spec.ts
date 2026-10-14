@@ -34,6 +34,6 @@ describe("AuthenticateUseCase", () => {
 
   it("o token de acesso leva só as permissões efetivas", async () => {
     await ctx.authenticate.execute({ identifier: "923482117", password: "catequese1" });
-    expect(ctx.accessTokens.issued.at(-1)).toMatchObject({ role: "GUARDIAN", permissions: [] });
+    expect(ctx.accessTokens.issued.at(-1)).toMatchObject({ roles: ["GUARDIAN"], permissions: [] });
   });
 });

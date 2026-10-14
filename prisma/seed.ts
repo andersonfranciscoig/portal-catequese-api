@@ -73,7 +73,7 @@ async function main() {
         data: {
           id: randomUUID(),
           // O tipo de conta não limita a administração (que tem todas as permissões).
-          role: "GUARDIAN",
+          roles: ["GUARDIAN"],
           fullName,
           phone,
           email,

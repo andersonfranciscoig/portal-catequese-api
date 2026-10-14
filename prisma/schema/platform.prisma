@@ -24,7 +24,6 @@ enum AccessRequestStatus {
   @@schema("platform")
 }
 
-
 model PlatformSettings {
   id              String     @id
   launchMode      LaunchMode @default(BETA) @map("launch_mode")

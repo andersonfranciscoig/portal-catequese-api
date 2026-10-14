@@ -10,7 +10,7 @@ const now = new Date("2026-10-13T10:00:00.000Z");
 
 function register(role: AccountRole, permissions: Permission[] = []) {
   return Account.register({
-    role,
+    roles: [role],
     fullName: FullName.create("Teresa Domingos"),
     phone: PhoneNumber.create("923610204"),
     passwordHash: "hash",

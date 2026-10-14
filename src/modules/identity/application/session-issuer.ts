@@ -43,7 +43,7 @@ export class SessionIssuer {
     await this.sessions.save(session);
     const access = await this.accessTokens.issue({
       accountId: account.id.value,
-      role: account.role,
+      roles: [...account.roles],
       permissions: account.effectivePermissions(),
     });
     return {

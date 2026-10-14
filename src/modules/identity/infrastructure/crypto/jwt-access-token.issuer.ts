@@ -9,7 +9,7 @@ import { AccountRole, Permission } from "../../domain/account-role.js";
 
 interface JwtPayload {
   sub: string;
-  role: string;
+  roles: string[];
   permissions: string[];
 }
 
@@ -28,7 +28,7 @@ export class JwtAccessTokenIssuer extends AccessTokenIssuer {
   async issue(claims: AccessTokenClaims): Promise<IssuedAccessToken> {
     const payload: JwtPayload = {
       sub: claims.accountId,
-      role: claims.role,
+      roles: claims.roles,
       permissions: claims.permissions,
     };
     const token = await this.jwt.signAsync(payload, { expiresIn: this.ttlSeconds });
@@ -38,10 +38,12 @@ export class JwtAccessTokenIssuer extends AccessTokenIssuer {
   async verify(token: string): Promise<AccessTokenClaims | null> {
     try {
       const payload = await this.jwt.verifyAsync<JwtPayload>(token);
-      if (!ROLES.has(payload.role)) return null;
+      if (!Array.isArray(payload.roles) || !payload.roles.every((role) => ROLES.has(role))) {
+        return null;
+      }
       return {
         accountId: payload.sub,
-        role: payload.role as AccountRole,
+        roles: payload.roles as AccountRole[],
         permissions: payload.permissions.filter((item): item is Permission =>
           PERMISSIONS.has(item),
         ),

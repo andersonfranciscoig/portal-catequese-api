@@ -24,7 +24,7 @@ export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, Adm
   async execute({ actorId, accountId, decision }: DecideCatechistInput) {
     await loadAdministrator(this.accounts, actorId);
     const account = await loadTarget(this.accounts, accountId);
-    if (account.role !== AccountRole.CATECHIST) throw new NotACatechistError();
+    if (!account.hasRole(AccountRole.CATECHIST)) throw new NotACatechistError();
 
     const now = this.clock.now();
     if (decision === "APPROVED") account.approve(now);

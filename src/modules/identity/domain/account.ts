@@ -8,13 +8,19 @@ import {
   COORDINATION_PERMISSIONS,
   Permission,
 } from "./account-role.js";
+import { AccountWithoutRolesError, RoleAlreadyAssignedError } from "./errors/identity.errors.js";
 import { AccountRegistered } from "./events/account-registered.js";
+import { AccountRoleAdded } from "./events/account-role-added.js";
 import type { Email } from "./value-objects/email.js";
 import type { FullName } from "./value-objects/full-name.js";
 import type { PhoneNumber } from "./value-objects/phone-number.js";
 
 export interface AccountProps {
-  role: AccountRole;
+  /**
+   * Papéis da conta (pelo menos um). Uma pessoa pode ser, ao mesmo tempo,
+   * encarregado de educação e catequista.
+   */
+  roles: AccountRole[];
   fullName: FullName;
   phone: PhoneNumber;
   email?: Email;
@@ -33,7 +39,7 @@ export interface AccountProps {
 }
 
 export interface RegisterAccountProps {
-  role: AccountRole;
+  roles: AccountRole[];
   fullName: FullName;
   phone: PhoneNumber;
   email?: Email;
@@ -48,27 +54,32 @@ export interface RegisterAccountProps {
 /** Conta de acesso ao portal (agregado do módulo de identidade). */
 export class Account extends AggregateRoot<AccountProps> {
   static register({ now, betaAccess, permissions, ...props }: RegisterAccountProps): Account {
+    const roles = uniqueRoles(props.roles);
     const account = new Account({
       ...props,
-      // A conta de catequista fica pendente até a coordenação aprovar.
-      approval: props.role === AccountRole.CATECHIST ? AccountApproval.PENDING : undefined,
+      roles,
+      // O papel de catequista fica pendente até a coordenação aprovar.
+      approval: roles.includes(AccountRole.CATECHIST) ? AccountApproval.PENDING : undefined,
       permissions: normalizePermissions(permissions ?? []),
       status: AccountStatus.ACTIVE,
       betaAccess: betaAccess ?? false,
       createdAt: now,
       updatedAt: now,
     });
-    account.record(new AccountRegistered(account.id.value, account.role, now));
+    account.record(new AccountRegistered(account.id.value, roles, now));
     return account;
   }
 
   /** Reconstrói uma conta já existente (ex.: a partir da base de dados). */
   static restore(props: AccountProps, id: UniqueId): Account {
-    return new Account({ ...props, permissions: [...props.permissions] }, id);
+    return new Account(
+      { ...props, roles: uniqueRoles(props.roles), permissions: [...props.permissions] },
+      id,
+    );
   }
 
-  get role() {
-    return this.props.role;
+  get roles(): readonly AccountRole[] {
+    return this.props.roles;
   }
   get fullName() {
     return this.props.fullName;
@@ -108,6 +119,19 @@ export class Account extends AggregateRoot<AccountProps> {
     return this.props.updatedAt;
   }
 
+  hasRole(role: AccountRole): boolean {
+    return this.props.roles.includes(role);
+  }
+
+  /** Só catequista e ainda sem aprovação: não usa permissões. */
+  private get isUnapprovedCatechistOnly(): boolean {
+    return (
+      this.props.roles.length === 1 &&
+      this.hasRole(AccountRole.CATECHIST) &&
+      this.props.approval !== AccountApproval.APPROVED
+    );
+  }
+
   get isBlocked(): boolean {
     return this.props.status === AccountStatus.BLOCKED;
   }
@@ -118,16 +142,14 @@ export class Account extends AggregateRoot<AccountProps> {
   }
 
   /**
-   * Regras: conta bloqueada não tem permissões; o super admin tem todas; um
-   * catequista por aprovar não usa permissões; financeiro, fora de prazo e
-   * aprovações só valem com acesso à coordenação.
+   * Regras: conta bloqueada não tem permissões; o super admin tem todas; uma
+   * conta que é só catequista e ainda não foi aprovada não usa permissões;
+   * financeiro, fora de prazo e aprovações só valem com acesso à coordenação.
    */
   hasPermission(permission: Permission): boolean {
     if (this.isBlocked) return false;
     if (this.props.permissions.includes(Permission.SUPER_ADMIN)) return true;
-    if (this.role === AccountRole.CATECHIST && this.approval !== AccountApproval.APPROVED) {
-      return false;
-    }
+    if (this.isUnapprovedCatechistOnly) return false;
     if (!this.props.permissions.includes(permission)) return false;
     return (
       !COORDINATION_PERMISSIONS.includes(permission) ||
@@ -165,14 +187,40 @@ export class Account extends AggregateRoot<AccountProps> {
     this.props.updatedAt = now;
   }
 
+  /**
+   * O próprio acrescenta um papel (ex.: "também sou catequista"). Ser catequista
+   * precisa de aprovação da coordenação.
+   */
+  addRole(role: AccountRole, now: Date): void {
+    if (this.hasRole(role)) throw new RoleAlreadyAssignedError();
+    this.props.roles = [...this.props.roles, role];
+    if (role === AccountRole.CATECHIST) this.props.approval = AccountApproval.PENDING;
+    this.props.updatedAt = now;
+    this.record(new AccountRoleAdded(this.id.value, role, now));
+  }
+
+  /**
+   * A administração define os papéis. Um catequista acrescentado pela
+   * administração fica logo aprovado; sem esse papel, deixa de haver aprovação.
+   */
+  setRoles(roles: AccountRole[], now: Date): void {
+    const next = uniqueRoles(roles);
+    const added = next.filter((role) => !this.hasRole(role));
+    if (!next.includes(AccountRole.CATECHIST)) this.props.approval = undefined;
+    else if (added.includes(AccountRole.CATECHIST)) this.props.approval = AccountApproval.APPROVED;
+    this.props.roles = next;
+    this.props.updatedAt = now;
+    for (const role of added) this.record(new AccountRoleAdded(this.id.value, role, now));
+  }
+
   approve(now: Date): void {
-    if (this.role !== AccountRole.CATECHIST) return;
+    if (!this.hasRole(AccountRole.CATECHIST)) return;
     this.props.approval = AccountApproval.APPROVED;
     this.props.updatedAt = now;
   }
 
   reject(now: Date): void {
-    if (this.role !== AccountRole.CATECHIST) return;
+    if (!this.hasRole(AccountRole.CATECHIST)) return;
     this.props.approval = AccountApproval.REJECTED;
     this.props.updatedAt = now;
   }
@@ -192,6 +240,13 @@ export class Account extends AggregateRoot<AccountProps> {
     this.props.passwordHash = passwordHash;
     this.props.updatedAt = now;
   }
+}
+
+/** Sem repetidos e com pelo menos um papel. */
+function uniqueRoles(roles: readonly AccountRole[]): AccountRole[] {
+  const unique = [...new Set(roles)];
+  if (!unique.length) throw new AccountWithoutRolesError();
+  return unique;
 }
 
 function normalizePermissions(permissions: Permission[]): Permission[] {

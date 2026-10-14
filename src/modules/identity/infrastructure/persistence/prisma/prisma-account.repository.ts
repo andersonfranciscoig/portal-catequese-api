@@ -85,7 +85,7 @@ export class PrismaAccountRepository extends AccountRepository {
         ],
       });
     }
-    if (query.role) and.push({ role: query.role });
+    if (query.role) and.push({ roles: { has: query.role } });
     if (query.status === "active") and.push({ status: "ACTIVE" });
     if (query.status === "blocked") and.push({ status: "BLOCKED" });
     if (query.status === "pending_approval") and.push({ approval: "PENDING" });

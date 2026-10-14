@@ -22,6 +22,7 @@ import { GetAccountStatsUseCase } from "../../application/use-cases/admin/get-ac
 import { GetAccountUseCase } from "../../application/use-cases/admin/get-account.use-case.js";
 import { ListAccountsUseCase } from "../../application/use-cases/admin/list-accounts.use-case.js";
 import { SetAccountPermissionsUseCase } from "../../application/use-cases/admin/set-account-permissions.use-case.js";
+import { SetAccountRolesUseCase } from "../../application/use-cases/admin/set-account-roles.use-case.js";
 import { SetBetaAccessUseCase } from "../../application/use-cases/admin/set-beta-access.use-case.js";
 import { UnblockAccountUseCase } from "../../application/use-cases/admin/unblock-account.use-case.js";
 import { Permission } from "../../domain/account-role.js";
@@ -33,11 +34,13 @@ import {
   blockSchema,
   catechistDecisionSchema,
   permissionsSchema,
+  rolesSchema,
   type AccountQueryParams,
   type BetaAccessBody,
   type BlockBody,
   type CatechistDecisionBody,
   type PermissionsBody,
+  type RolesBody,
 } from "./dtos/auth.schemas.js";
 import { AuthGuard } from "./guards/auth.guard.js";
 import { PermissionsGuard } from "./guards/permissions.guard.js";
@@ -58,6 +61,7 @@ export class AdminAccountsController {
     private readonly unblockAccount: UnblockAccountUseCase,
     private readonly decideCatechist: DecideCatechistUseCase,
     private readonly setBetaAccess: SetBetaAccessUseCase,
+    private readonly setRoles: SetAccountRolesUseCase,
   ) {}
 
   @Get()
@@ -127,6 +131,16 @@ export class AdminAccountsController {
     @Body(new ZodValidationPipe(catechistDecisionSchema)) body: CatechistDecisionBody,
   ) {
     return this.decideCatechist.execute({ ...body, actorId: actor.accountId, accountId: id });
+  }
+
+  /** Papéis da conta (ex.: encarregado e catequista). */
+  @Put(":id/roles")
+  roles(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(rolesSchema)) body: RolesBody,
+  ) {
+    return this.setRoles.execute({ ...body, actorId: actor.accountId, accountId: id });
   }
 
   @Put(":id/beta-access")

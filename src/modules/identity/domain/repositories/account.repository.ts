@@ -29,6 +29,8 @@ export interface AccountStats {
  */
 export abstract class AccountRepository {
   abstract findById(id: UniqueId): Promise<Account | null>;
+  /** As que existirem (ids desconhecidos ficam de fora). */
+  abstract findByIds(ids: UniqueId[]): Promise<Account[]>;
   abstract findByEmail(email: Email): Promise<Account | null>;
   abstract findByPhone(phone: PhoneNumber): Promise<Account | null>;
   abstract save(account: Account): Promise<void>;

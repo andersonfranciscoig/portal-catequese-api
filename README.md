@@ -9,11 +9,12 @@ NestJS + TypeScript, PostgreSQL com Prisma, testes com Vitest.
 independente dos outros. Se um dia for preciso, um módulo sai para um
 microserviço sem reescrever os restantes.
 
-| Módulo     | Responsabilidade                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| `identity` | contas, sessões, permissões, perfil e administração das contas                              |
-| `platform` | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
-| `audit`    | registo de atividade (quem fez o quê e quando)                                              |
+| Módulo       | Responsabilidade                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `identity`   | contas, sessões, permissões, perfil e administração das contas                              |
+| `platform`   | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
+| `audit`      | registo de atividade (quem fez o quê e quando)                                              |
+| `catechesis` | ano catequético, catequizandos, matrículas, turmas, presenças e avaliações                  |
 
 ```
 src/
@@ -50,6 +51,8 @@ Regras (verificadas pelo ESLint em `eslint.config.js`):
   - `LaunchAccessPolicy`: o `identity` pergunta se alguém pode entrar; o
     `platform` responde. O `identity` não depende do `platform`.
   - `ActivityRecorder`: todos registam atividade; o `audit` guarda-a.
+  - `PeopleDirectory`: o `catechesis` pergunta nomes, contactos e papéis das
+    contas; o `identity` responde. Entre esquemas só se guardam ids.
   - evento `platform.access_request_approved`: o `identity` dá acesso de testes
     às contas com esse contacto.
 
@@ -146,6 +149,45 @@ pedido: uma permissão retirada ou uma conta bloqueada deixam logo de valer.
 
 Salvaguardas: a administração não se pode bloquear nem retirar a si própria, e
 há sempre pelo menos uma administração ativa.
+
+### Catequese (`catechesis`)
+
+Portal da família — encarregado (educandos menores) ou adulto (o próprio):
+
+| Método | Rota                  | Descrição                                                                        |
+| ------ | --------------------- | -------------------------------------------------------------------------------- |
+| `GET`  | `/me/family`          | educandos (ou o próprio) com a matrícula e a turma do ano, e todas as matrículas |
+| `GET`  | `/me/enrollments`     | todas as matrículas da família                                                   |
+| `GET`  | `/me/catechumens/:id` | perfil: matrícula, turma, sacramentos e presenças do ano                         |
+| `POST` | `/me/enrollments`     | matrícula (`guardian` presente = educando menor; sem ele = o próprio adulto)     |
+
+Portal do catequista (papel de catequista aprovado), sempre a turma do ano em curso:
+
+| Método | Rota                                   | Descrição                                             |
+| ------ | -------------------------------------- | ----------------------------------------------------- |
+| `GET`  | `/me/catechist/class`                  | turma, catequizandos e encontros já realizados        |
+| `GET`  | `/me/catechist/class/attendance/:date` | chamada de um encontro                                |
+| `PUT`  | `/me/catechist/class/attendance/:date` | lança/corrige a chamada (todos os catequizandos)      |
+| `GET`  | `/me/catechist/class/evaluations`      | pauta: notas por trimestre, presença, sugestão        |
+| `PUT`  | `/me/catechist/class/evaluations`      | guarda notas (0–20) e decisões                        |
+| `GET`  | `/me/catechist/class/catechumens/:id`  | ficha: presenças, avaliação e contacto do encarregado |
+
+Coordenação (permissão `COORDINATION`):
+
+| Método | Rota                                     | Descrição                                                |
+| ------ | ---------------------------------------- | -------------------------------------------------------- |
+| `GET`  | `/coordination/calendar`                 | ano catequético em curso                                 |
+| `PUT`  | `/coordination/calendar`                 | define o ano e as datas da catequese                     |
+| `GET`  | `/coordination/classes`                  | turmas do ano (catequistas, inscritos, próximo encontro) |
+| `POST` | `/coordination/classes`                  | cria uma turma                                           |
+| `PUT`  | `/coordination/classes/:id/catechists`   | catequistas da turma (aprovados, um principal)           |
+| `GET`  | `/coordination/enrollments`              | matrículas do ano (`status`)                             |
+| `POST` | `/coordination/enrollments/:id/decision` | confirma numa turma (mesmo nível, com lugar) ou recusa   |
+
+Regras: uma matrícula por catequizando em cada ano; menores são inscritos pelo
+encarregado e adultos (18+) por si; os encontros são semanais (sábado ou
+domingo, conforme o período) entre o início e o fim do ano, e só se lançam
+presenças de encontros que já aconteceram. O seed cria o ano 2026/2027.
 
 Proteger rotas noutro módulo:
 

@@ -1,0 +1,216 @@
+import {
+  PeopleDirectory,
+  type PersonSnapshot,
+} from "../../../shared/application/people-directory.js";
+import { FixedClock } from "../../../shared/testing/fixed-clock.js";
+import { RecordingActivity } from "../../../shared/testing/recording-activity.js";
+import { CatechesisAccess } from "../application/catechesis-access.js";
+import { CatechistClassResolver } from "../application/catechist-class.js";
+import { EnrollmentCodes } from "../application/enrollment-codes.js";
+import {
+  GetClassCatechumenUseCase,
+  GetEvaluationsUseCase,
+  SaveEvaluationsUseCase,
+} from "../application/use-cases/catechist/evaluation.use-cases.js";
+import { GetMyClassUseCase } from "../application/use-cases/catechist/get-my-class.use-case.js";
+import {
+  GetRollUseCase,
+  SaveRollUseCase,
+} from "../application/use-cases/catechist/roll.use-cases.js";
+import {
+  GetCalendarUseCase,
+  SetCalendarUseCase,
+} from "../application/use-cases/coordination/calendar.use-cases.js";
+import {
+  AssignCatechistsUseCase,
+  CreateClassUseCase,
+  ListClassesUseCase,
+} from "../application/use-cases/coordination/class.use-cases.js";
+import {
+  DecideEnrollmentUseCase,
+  ListEnrollmentsUseCase,
+} from "../application/use-cases/coordination/enrollment.use-cases.js";
+import { GetCatechumenProfileUseCase } from "../application/use-cases/family/get-catechumen-profile.use-case.js";
+import { GetFamilyUseCase } from "../application/use-cases/family/get-family.use-case.js";
+import {
+  SubmitEnrollmentUseCase,
+  type SubmitEnrollmentInput,
+} from "../application/use-cases/family/submit-enrollment.use-case.js";
+import {
+  InMemoryAttendanceRepository,
+  InMemoryCalendarRepository,
+  InMemoryCatechumenRepository,
+  InMemoryClassRepository,
+  InMemoryEnrollmentRepository,
+  InMemoryEvaluationRepository,
+} from "../infrastructure/persistence/in-memory/in-memory-catechesis.repositories.js";
+
+/** Diretório de pessoas falso: as contas que cada teste precisar. */
+export class FakePeopleDirectory extends PeopleDirectory {
+  readonly people = new Map<string, PersonSnapshot>();
+
+  add(person: Partial<PersonSnapshot> & Pick<PersonSnapshot, "id" | "fullName">) {
+    this.people.set(person.id, {
+      phone: "+244923000000",
+      roles: ["GUARDIAN"],
+      approvedCatechist: false,
+      active: true,
+      ...person,
+    });
+  }
+
+  async find(id: string) {
+    return this.people.get(id) ?? null;
+  }
+
+  async findMany(ids: string[]) {
+    return [...new Set(ids)].flatMap((id) => this.people.get(id) ?? []);
+  }
+}
+
+export const IDS = {
+  coordinator: "00000000-0000-4000-8000-000000000001",
+  guardian: "00000000-0000-4000-8000-000000000002",
+  adult: "00000000-0000-4000-8000-000000000003",
+  catechist: "00000000-0000-4000-8000-000000000004",
+  /** Catequista que também é encarregada. */
+  both: "00000000-0000-4000-8000-000000000005",
+  pending: "00000000-0000-4000-8000-000000000006",
+  stranger: "00000000-0000-4000-8000-000000000007",
+};
+
+export function createCatechesisTestContext() {
+  const calendars = new InMemoryCalendarRepository();
+  const catechumens = new InMemoryCatechumenRepository();
+  const enrollments = new InMemoryEnrollmentRepository();
+  const classes = new InMemoryClassRepository();
+  const attendance = new InMemoryAttendanceRepository();
+  const evaluations = new InMemoryEvaluationRepository();
+  const people = new FakePeopleDirectory();
+  const activity = new RecordingActivity();
+  // Terça-feira, 13 de outubro de 2026.
+  const clock = new FixedClock();
+  let next = 0;
+  const codes = new EnrollmentCodes(enrollments, () => 48_200 + next++);
+  const access = new CatechesisAccess(people);
+  const resolver = new CatechistClassResolver(
+    access,
+    calendars,
+    classes,
+    enrollments,
+    catechumens,
+    clock,
+  );
+
+  people.add({ id: IDS.coordinator, fullName: "Teresa Domingos" });
+  people.add({ id: IDS.guardian, fullName: "Anderson Francisco", phone: "+244923482117" });
+  people.add({ id: IDS.adult, fullName: "Carlos Mendes", roles: ["CATECHUMEN"] });
+  people.add({
+    id: IDS.catechist,
+    fullName: "Maria José",
+    roles: ["CATECHIST"],
+    approvedCatechist: true,
+  });
+  people.add({
+    id: IDS.both,
+    fullName: "Joana Kiala",
+    roles: ["GUARDIAN", "CATECHIST"],
+    approvedCatechist: true,
+  });
+  people.add({ id: IDS.pending, fullName: "Lucas Pedro", roles: ["CATECHIST"] });
+  people.add({ id: IDS.stranger, fullName: "Rosa Afonso" });
+
+  const ctx = {
+    calendars,
+    catechumens,
+    enrollments,
+    classes,
+    attendance,
+    evaluations,
+    people,
+    activity,
+    clock,
+    getCalendar: new GetCalendarUseCase(calendars),
+    setCalendar: new SetCalendarUseCase(calendars, activity, clock),
+    family: new GetFamilyUseCase(catechumens, enrollments, classes, calendars, people, clock),
+    profile: new GetCatechumenProfileUseCase(
+      catechumens,
+      enrollments,
+      classes,
+      attendance,
+      calendars,
+      people,
+      clock,
+    ),
+    submit: new SubmitEnrollmentUseCase(
+      catechumens,
+      enrollments,
+      calendars,
+      access,
+      codes,
+      activity,
+      clock,
+    ),
+    myClass: new GetMyClassUseCase(resolver, attendance, people),
+    roll: new GetRollUseCase(resolver, attendance),
+    saveRoll: new SaveRollUseCase(resolver, attendance, activity, clock),
+    getEvaluations: new GetEvaluationsUseCase(resolver, attendance, evaluations),
+    saveEvaluations: new SaveEvaluationsUseCase(resolver, attendance, evaluations, activity, clock),
+    file: new GetClassCatechumenUseCase(resolver, attendance, evaluations, people),
+    listClasses: new ListClassesUseCase(classes, enrollments, calendars, people, clock),
+    createClass: new CreateClassUseCase(classes, calendars, people, activity, clock),
+    assign: new AssignCatechistsUseCase(classes, enrollments, calendars, people, activity, clock),
+    listEnrollments: new ListEnrollmentsUseCase(enrollments, catechumens, calendars),
+    decide: new DecideEnrollmentUseCase(enrollments, classes, catechumens, activity, clock),
+
+    /** O ano 2026/2027 (catequese de 26 de setembro a 3 de julho). */
+    async defineYear() {
+      return ctx.setCalendar.execute({
+        actorId: IDS.coordinator,
+        label: "2026/2027",
+        startsOn: "2026-09-26",
+        endsOn: "2027-07-03",
+      });
+    },
+
+    /** Matrícula de um educando (Comunhão 1.º ano, sábado de manhã). */
+    async enrollChild(
+      overrides: Partial<SubmitEnrollmentInput["catechumen"]> = {},
+      accountId = IDS.guardian,
+    ) {
+      return ctx.submit.execute({
+        accountId,
+        guardian: { relationship: "FATHER" },
+        catechumen: {
+          fullName: "Inês Francisco",
+          birthDate: "2017-05-02",
+          gender: "FEMALE",
+          address: "Rua da Missão, Maianga",
+          sacraments: { baptism: true, firstCommunion: false },
+          ...overrides,
+        },
+        catechesis: { type: "NEW", level: "COMMUNION_1", preferredSlot: "SATURDAY_MORNING" },
+      });
+    },
+
+    /** Turma A de Comunhão 1.º ano com a catequista principal. */
+    async classWithCatechist(catechistId = IDS.catechist, capacity = 30) {
+      const klass = await ctx.createClass.execute({
+        actorId: IDS.coordinator,
+        level: "COMMUNION_1",
+        section: "A",
+        slot: "SATURDAY_MORNING",
+        startTime: "08:00",
+        room: "Sala 04",
+        capacity,
+      });
+      await ctx.assign.execute({
+        actorId: IDS.coordinator,
+        classId: klass.id,
+        catechists: [{ accountId: catechistId, role: "LEAD" }],
+      });
+      return klass;
+    },
+  };
+  return ctx;
+}

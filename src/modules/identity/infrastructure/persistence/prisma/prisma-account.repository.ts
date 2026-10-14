@@ -24,6 +24,14 @@ export class PrismaAccountRepository extends AccountRepository {
     return row ? AccountMapper.toDomain(row) : null;
   }
 
+  async findByIds(ids: UniqueId[]) {
+    if (!ids.length) return [];
+    const rows = await this.prisma.account.findMany({
+      where: { id: { in: ids.map((id) => id.value) } },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
+  }
+
   async findByEmail(email: Email) {
     const row = await this.prisma.account.findUnique({ where: { email: email.value } });
     return row ? AccountMapper.toDomain(row) : null;

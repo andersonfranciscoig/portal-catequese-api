@@ -1,5 +1,6 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { CatechesisLevel, SessionSlot } from "../../../domain/catechesis.js";
@@ -16,6 +17,7 @@ import type {
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { classLabel, classSchedule } from "../../messages.js";
 import { toClassViews, type ClassView } from "../../views.js";
 
 export interface CoordinationClassView extends ClassView {
@@ -85,7 +87,7 @@ export class CreateClassUseCase {
       actorId,
       category: "SETTINGS",
       action: "catechesis.class_created",
-      summary: `Criou a turma ${klass.section} de ${klass.level} (${calendar.label})`,
+      summary: `Criou a turma ${classLabel(klass)} (${calendar.label})`,
     });
     const [view] = await toClassViews(
       [klass],
@@ -112,6 +114,7 @@ export class AssignCatechistsUseCase {
     private readonly people: PeopleDirectory,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({
@@ -135,13 +138,31 @@ export class AssignCatechistsUseCase {
         throw new InvalidClassError(`${name ?? "Este catequista"} já tem outra turma neste ano.`);
       }
     }
+    const before = klass.catechists.map((item) => item.accountId);
     klass.assignCatechists(catechists);
     await this.classes.save(klass);
     await this.activity.record({
       actorId,
       category: "CATECHISTS",
       action: "catechesis.class_catechists_changed",
-      summary: `Atribuiu catequistas à turma ${klass.section} de ${klass.level}: ${people.map((person) => person.fullName).join(", ") || "nenhum"}`,
+      summary: `Atribuiu catequistas a ${classLabel(klass)}: ${people.map((person) => person.fullName).join(", ") || "nenhum"}`,
+    });
+    const after = catechists.map((item) => item.accountId);
+    await this.notifier.notify({
+      to: { accountIds: after.filter((id) => !before.includes(id)) },
+      kind: "catechesis.class_assigned",
+      title: "Foi-lhe atribuída uma turma",
+      body: `${classLabel(klass)} · ${classSchedule(klass)}`,
+      link: "/portal/turma",
+      exceptAccountId: actorId,
+    });
+    await this.notifier.notify({
+      to: { accountIds: before.filter((id) => !after.includes(id)) },
+      kind: "catechesis.class_unassigned",
+      title: `Deixou de acompanhar ${classLabel(klass)}`,
+      body: "A coordenação alterou os catequistas da turma.",
+      link: "/portal",
+      exceptAccountId: actorId,
     });
     const calendar = await this.calendars.get();
     const views = await toClassViews([klass], this.people, calendar, luandaToday(this.clock.now()));

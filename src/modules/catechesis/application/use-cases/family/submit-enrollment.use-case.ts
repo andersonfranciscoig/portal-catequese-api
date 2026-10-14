@@ -1,7 +1,9 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import {
   ADULT_AGE,
+  formatLevel,
   type CatechesisLevel,
   type EnrollmentType,
   type Gender,
@@ -64,6 +66,7 @@ export class SubmitEnrollmentUseCase {
     private readonly codes: EnrollmentCodes,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({
@@ -141,6 +144,14 @@ export class SubmitEnrollmentUseCase {
       category: "ENROLLMENT",
       action: "catechesis.enrollment_submitted",
       summary: `Submeteu a matrícula de ${catechumen.fullName} (${enrollment.code})`,
+    });
+    await this.notifier.notify({
+      to: { permission: "COORDINATION" },
+      kind: "catechesis.enrollment_submitted",
+      title: "Nova matrícula para analisar",
+      body: `${catechumen.fullName} · ${formatLevel(enrollment.level)} (${enrollment.code})`,
+      link: "/dashboard/matriculas",
+      exceptAccountId: accountId,
     });
     return toEnrollmentView(enrollment, catechumen.fullName);
   }

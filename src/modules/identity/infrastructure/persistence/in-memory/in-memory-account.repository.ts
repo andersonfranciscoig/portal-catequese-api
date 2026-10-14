@@ -1,3 +1,4 @@
+import type { Permission } from "../../../domain/account-role.js";
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { Account } from "../../../domain/account.js";
 import {
@@ -72,6 +73,13 @@ export class InMemoryAccountRepository extends AccountRepository {
       admins: all.filter((item) => item.isSuperAdmin).length,
       testers: all.filter((item) => item.betaAccess).length,
     };
+  }
+
+  async findActiveWithAnyPermission(permissions: Permission[]) {
+    return [...this.items.values()].filter(
+      (item) =>
+        !item.isBlocked && item.permissions.some((permission) => permissions.includes(permission)),
+    );
   }
 
   async countActiveSuperAdmins(exceptId: UniqueId) {

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
+import { Notifier } from "../../shared/application/notifier.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
@@ -108,11 +109,12 @@ const RESOLVER = CatechistClassResolver;
       EnrollmentCodes,
       AUDIT,
       Clock,
+      Notifier,
     ]),
     // Catequista
     provideUseCase(GetMyClassUseCase, [RESOLVER, ATTENDANCE, PEOPLE]),
     provideUseCase(GetRollUseCase, [RESOLVER, ATTENDANCE]),
-    provideUseCase(SaveRollUseCase, [RESOLVER, ATTENDANCE, AUDIT, Clock]),
+    provideUseCase(SaveRollUseCase, [RESOLVER, ATTENDANCE, AUDIT, Clock, Notifier]),
     provideUseCase(GetEvaluationsUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS]),
     provideUseCase(SaveEvaluationsUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS, AUDIT, Clock]),
     provideUseCase(GetClassCatechumenUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS, PEOPLE]),
@@ -121,9 +123,24 @@ const RESOLVER = CatechistClassResolver;
     provideUseCase(SetCalendarUseCase, [CALENDAR, AUDIT, Clock]),
     provideUseCase(ListClassesUseCase, [CLASSES, ENROLLMENTS, CALENDAR, PEOPLE, Clock]),
     provideUseCase(CreateClassUseCase, [CLASSES, CALENDAR, PEOPLE, AUDIT, Clock]),
-    provideUseCase(AssignCatechistsUseCase, [CLASSES, ENROLLMENTS, CALENDAR, PEOPLE, AUDIT, Clock]),
+    provideUseCase(AssignCatechistsUseCase, [
+      CLASSES,
+      ENROLLMENTS,
+      CALENDAR,
+      PEOPLE,
+      AUDIT,
+      Clock,
+      Notifier,
+    ]),
     provideUseCase(ListEnrollmentsUseCase, [ENROLLMENTS, CATECHUMENS, CALENDAR]),
-    provideUseCase(DecideEnrollmentUseCase, [ENROLLMENTS, CLASSES, CATECHUMENS, AUDIT, Clock]),
+    provideUseCase(DecideEnrollmentUseCase, [
+      ENROLLMENTS,
+      CLASSES,
+      CATECHUMENS,
+      AUDIT,
+      Clock,
+      Notifier,
+    ]),
   ],
 })
 export class CatechesisModule {}

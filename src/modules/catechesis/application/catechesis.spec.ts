@@ -434,3 +434,109 @@ describe("Portal do catequista", () => {
     expect((await ctx.myClass.execute({ accountId: IDS.both })).members).toHaveLength(2);
   });
 });
+
+describe("Notificações da catequese", () => {
+  beforeEach(() => ctx.defineYear());
+
+  it("a matrícula avisa a coordenação e a decisão avisa a família", async () => {
+    const enrollment = await ctx.enrollChild();
+    expect(ctx.notifier.last("catechesis.enrollment_submitted")).toMatchObject({
+      to: { permission: "COORDINATION" },
+      body: "Inês Francisco · Comunhão · 1.º ano (CRP-2026-48200)",
+      exceptAccountId: IDS.guardian,
+    });
+
+    const klass = await ctx.classWithCatechist();
+    await ctx.decide.execute({
+      actorId: IDS.coordinator,
+      enrollmentId: enrollment.id,
+      decision: "CONFIRMED",
+      classId: klass.id,
+    });
+    expect(ctx.notifier.last("catechesis.enrollment_confirmed")).toMatchObject({
+      to: { accountIds: [IDS.guardian] },
+      title: "Matrícula de Inês confirmada",
+      body: "Comunhão · 1.º ano — Turma A · Sábado de manhã · 08:00 · Sala 04",
+      link: `/portal/educandos/${enrollment.catechumenId}`,
+    });
+
+    const other = await ctx.enrollChild({ fullName: "Rui Francisco", birthDate: "2016-01-01" });
+    await ctx.decide.execute({
+      actorId: IDS.coordinator,
+      enrollmentId: other.id,
+      decision: "REJECTED",
+    });
+    expect(ctx.notifier.last("catechesis.enrollment_rejected")).toMatchObject({
+      title: "Matrícula de Rui não foi aceite",
+      link: "/portal/matriculas",
+    });
+  });
+
+  it("o adulto é avisado no seu portal", async () => {
+    const enrollment = await ctx.submit.execute({
+      accountId: IDS.adult,
+      catechumen: {
+        fullName: "Carlos Mendes",
+        birthDate: "1995-03-10",
+        gender: "MALE",
+        sacraments: { baptism: true, firstCommunion: true },
+      },
+      catechesis: { type: "NEW", level: "CONFIRMATION_1", preferredSlot: "SATURDAY_AFTERNOON" },
+    });
+    await ctx.decide.execute({
+      actorId: IDS.coordinator,
+      enrollmentId: enrollment.id,
+      decision: "REJECTED",
+    });
+    const sent = ctx.notifier.messages.filter(
+      (item) => item.kind === "catechesis.enrollment_rejected",
+    );
+    expect(sent).toEqual([expect.objectContaining({ to: { accountIds: [IDS.adult] } })]);
+  });
+
+  it("o catequista é avisado quando recebe ou deixa uma turma", async () => {
+    const klass = await ctx.classWithCatechist();
+    expect(ctx.notifier.last("catechesis.class_assigned")).toMatchObject({
+      to: { accountIds: [IDS.catechist] },
+      body: "Comunhão · 1.º ano — Turma A · Sábado de manhã · 08:00 · Sala 04",
+    });
+    await ctx.assign.execute({
+      actorId: IDS.coordinator,
+      classId: klass.id,
+      catechists: [{ accountId: IDS.both, role: "LEAD" }],
+    });
+    expect(ctx.notifier.last("catechesis.class_assigned")?.to).toEqual({ accountIds: [IDS.both] });
+    expect(ctx.notifier.last("catechesis.class_unassigned")).toMatchObject({
+      to: { accountIds: [IDS.catechist] },
+      title: "Deixou de acompanhar Comunhão · 1.º ano — Turma A",
+    });
+  });
+
+  it("a falta avisa o encarregado uma só vez", async () => {
+    const klass = await ctx.classWithCatechist();
+    const enrollment = await ctx.enrollChild();
+    await ctx.decide.execute({
+      actorId: IDS.coordinator,
+      enrollmentId: enrollment.id,
+      decision: "CONFIRMED",
+      classId: klass.id,
+    });
+    const roll = (status: "PRESENT" | "ABSENT") =>
+      ctx.saveRoll.execute({
+        accountId: IDS.catechist,
+        date: "2026-10-10",
+        marks: [{ catechumenId: enrollment.catechumenId, status }],
+      });
+    await roll("PRESENT");
+    expect(ctx.notifier.kinds()).not.toContain("catechesis.absence");
+    await roll("ABSENT");
+    await roll("ABSENT");
+    const absences = ctx.notifier.messages.filter((item) => item.kind === "catechesis.absence");
+    expect(absences).toEqual([
+      expect.objectContaining({
+        to: { accountIds: [IDS.guardian] },
+        title: "Inês faltou ao encontro de 10/10",
+      }),
+    ]);
+  });
+});

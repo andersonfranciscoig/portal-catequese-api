@@ -1,6 +1,6 @@
 import type { UniqueId } from "../../../../shared/domain/unique-id.js";
 import type { Account } from "../account.js";
-import type { AccountRole } from "../account-role.js";
+import type { AccountRole, Permission } from "../account-role.js";
 import type { Email } from "../value-objects/email.js";
 import type { PhoneNumber } from "../value-objects/phone-number.js";
 
@@ -37,6 +37,8 @@ export abstract class AccountRepository {
   /** Pesquisa paginada (administração), por nome. */
   abstract search(query: AccountQuery): Promise<{ items: Account[]; total: number }>;
   abstract stats(): Promise<AccountStats>;
+  /** Contas ativas com alguma destas permissões atribuídas (candidatas a notificações). */
+  abstract findActiveWithAnyPermission(permissions: Permission[]): Promise<Account[]>;
   /** Contas de administração geral ativas, exceto `exceptId`. */
   abstract countActiveSuperAdmins(exceptId: UniqueId): Promise<number>;
 }

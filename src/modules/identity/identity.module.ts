@@ -9,6 +9,7 @@ import {
   type AccessRequestApprovedEvent,
 } from "../../shared/application/integration-events.js";
 import { LaunchAccessPolicy } from "../../shared/application/launch-access-policy.js";
+import { Notifier } from "../../shared/application/notifier.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
@@ -108,6 +109,7 @@ const AUDIT = ActivityRecorder;
       EventBus,
       AUDIT,
       Clock,
+      Notifier,
     ]),
     provideUseCase(AuthenticateUseCase, [
       AccountRepository,
@@ -128,17 +130,17 @@ const AUDIT = ActivityRecorder;
     provideUseCase(GetCurrentAccountUseCase, [AccountRepository]),
     provideUseCase(UpdateProfileUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(ChangePasswordUseCase, [AccountRepository, PasswordHasher, AUDIT, Clock]),
-    provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock]),
+    provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     // Administração
     provideUseCase(ListAccountsUseCase, [AccountRepository]),
     provideUseCase(GetAccountUseCase, [AccountRepository]),
     provideUseCase(GetAccountStatsUseCase, [AccountRepository]),
-    provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
     provideUseCase(BlockAccountUseCase, [AccountRepository, SessionRepository, AUDIT, Clock]),
-    provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock]),
-    provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
+    provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
     provideUseCase(SetBetaAccessUseCase, [AccountRepository, AUDIT, Clock]),
-    provideUseCase(SetAccountRolesUseCase, [AccountRepository, EventBus, AUDIT, Clock]),
+    provideUseCase(SetAccountRolesUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     provideUseCase(GrantBetaAccessByContactUseCase, [AccountRepository, Clock]),
     AuthGuard,
     PermissionsGuard,

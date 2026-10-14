@@ -9,12 +9,13 @@ NestJS + TypeScript, PostgreSQL com Prisma, testes com Vitest.
 independente dos outros. Se um dia for preciso, um módulo sai para um
 microserviço sem reescrever os restantes.
 
-| Módulo       | Responsabilidade                                                                            |
-| ------------ | ------------------------------------------------------------------------------------------- |
-| `identity`   | contas, sessões, permissões, perfil e administração das contas                              |
-| `platform`   | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
-| `audit`      | registo de atividade (quem fez o quê e quando)                                              |
-| `catechesis` | ano catequético, catequizandos, matrículas, turmas, presenças e avaliações                  |
+| Módulo          | Responsabilidade                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `identity`      | contas, sessões, permissões, perfil e administração das contas                              |
+| `platform`      | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
+| `audit`         | registo de atividade (quem fez o quê e quando)                                              |
+| `notifications` | avisos dentro do portal (o sino) para cada conta                                            |
+| `catechesis`    | ano catequético, catequizandos, matrículas, turmas, presenças e avaliações                  |
 
 ```
 src/
@@ -51,6 +52,9 @@ Regras (verificadas pelo ESLint em `eslint.config.js`):
   - `LaunchAccessPolicy`: o `identity` pergunta se alguém pode entrar; o
     `platform` responde. O `identity` não depende do `platform`.
   - `ActivityRecorder`: todos registam atividade; o `audit` guarda-a.
+  - `Notifier`: todos notificam; o `notifications` resolve os destinatários
+    (contas ou quem tem uma permissão) e guarda os avisos. Uma falha a
+    notificar só fica no log: nunca anula a ação.
   - `PeopleDirectory`: o `catechesis` pergunta nomes, contactos e papéis das
     contas; o `identity` responde. Entre esquemas só se guardam ids.
   - evento `platform.access_request_approved`: o `identity` dá acesso de testes
@@ -149,6 +153,30 @@ pedido: uma permissão retirada ou uma conta bloqueada deixam logo de valer.
 
 Salvaguardas: a administração não se pode bloquear nem retirar a si própria, e
 há sempre pelo menos uma administração ativa.
+
+### Notificações (`notifications`)
+
+| Método | Rota                         | Descrição                                                        |
+| ------ | ---------------------------- | ---------------------------------------------------------------- |
+| `GET`  | `/me/notifications`          | as mais recentes e quantas por ler (`unread`, `limit`, `before`) |
+| `POST` | `/me/notifications/:id/read` | marca uma como lida                                              |
+| `POST` | `/me/notifications/read-all` | marca todas como lidas                                           |
+
+Quem é avisado e quando:
+
+| Acontecimento                                            | Quem recebe                      |
+| -------------------------------------------------------- | -------------------------------- |
+| Conta nova                                               | administração                    |
+| Conta de catequista ou pedido "também sou catequista"    | quem aprova catequistas          |
+| Pedido de acesso à fase de testes                        | administração                    |
+| Catequista aprovado / recusado / dado pela administração | a pessoa                         |
+| Papéis ou acessos alterados, conta desbloqueada          | a pessoa                         |
+| Matrícula submetida no portal                            | coordenação                      |
+| Matrícula confirmada (com a turma) ou recusada           | encarregado, ou o próprio adulto |
+| Turma atribuída ou retirada                              | o catequista                     |
+| Falta num encontro (só a primeira vez)                   | encarregado, ou o próprio adulto |
+
+Quem fez a ação nunca é notificado dela.
 
 ### Catequese (`catechesis`)
 

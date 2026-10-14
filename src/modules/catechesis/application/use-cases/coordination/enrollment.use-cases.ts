@@ -1,7 +1,10 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
-import type { EnrollmentStatus } from "../../../domain/catechesis.js";
+import { formatLevel, type EnrollmentStatus } from "../../../domain/catechesis.js";
+import type { Catechumen } from "../../../domain/catechumen.js";
+import type { Enrollment } from "../../../domain/enrollment.js";
 import {
   CalendarNotDefinedError,
   ClassFullError,
@@ -15,6 +18,7 @@ import type {
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { classLabel, classSchedule, firstName } from "../../messages.js";
 import { toEnrollmentView, type EnrollmentView } from "../../views.js";
 
 /** Matrículas do ano em curso (coordenação). */
@@ -49,6 +53,7 @@ export class DecideEnrollmentUseCase {
     private readonly catechumens: CatechumenRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute(
@@ -78,7 +83,12 @@ export class DecideEnrollmentUseCase {
         actorId: input.actorId,
         category: "ENROLLMENT",
         action: "catechesis.enrollment_confirmed",
-        summary: `Confirmou a matrícula de ${name} (${enrollment.code}) na turma ${klass.section}`,
+        summary: `Confirmou a matrícula de ${name} (${enrollment.code}) em ${classLabel(klass)}`,
+      });
+      await this.notifyFamily(enrollment, catechumen, input.actorId, {
+        kind: "catechesis.enrollment_confirmed",
+        title: `Matrícula de ${firstName(name)} confirmada`,
+        body: `${classLabel(klass)} · ${classSchedule(klass)}`,
       });
     } else {
       enrollment.reject(input.actorId, now);
@@ -89,7 +99,45 @@ export class DecideEnrollmentUseCase {
         action: "catechesis.enrollment_rejected",
         summary: `Recusou a matrícula de ${name} (${enrollment.code})`,
       });
+      await this.notifyFamily(enrollment, catechumen, input.actorId, {
+        kind: "catechesis.enrollment_rejected",
+        title: `Matrícula de ${firstName(name)} não foi aceite`,
+        body: `${formatLevel(enrollment.level)} (${enrollment.code}). Para saber mais, fale com a secretaria da catequese.`,
+        link: "/portal/matriculas",
+      });
     }
     return toEnrollmentView(enrollment, name);
+  }
+
+  /**
+   * Avisa quem acompanha o catequizando: o próprio adulto (no seu portal) e o
+   * encarregado ou quem submeteu (no perfil do educando).
+   */
+  private async notifyFamily(
+    enrollment: Enrollment,
+    catechumen: Catechumen | null,
+    actorId: string,
+    message: { kind: string; title: string; body: string; link?: string },
+  ) {
+    const adult = catechumen?.accountId;
+    const guardians = [...new Set([catechumen?.guardianAccountId, enrollment.submittedBy])].filter(
+      (id): id is string => Boolean(id) && id !== adult,
+    );
+    if (adult) {
+      await this.notifier.notify({
+        ...message,
+        to: { accountIds: [adult] },
+        link: message.link ?? "/portal",
+        exceptAccountId: actorId,
+      });
+    }
+    if (guardians.length) {
+      await this.notifier.notify({
+        ...message,
+        to: { accountIds: guardians },
+        link: message.link ?? `/portal/educandos/${enrollment.catechumenId}`,
+        exceptAccountId: actorId,
+      });
+    }
   }
 }

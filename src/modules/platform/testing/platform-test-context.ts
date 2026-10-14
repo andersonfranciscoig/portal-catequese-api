@@ -1,3 +1,4 @@
+import { RecordingNotifier } from "../../../shared/testing/recording-notifier.js";
 import { FixedClock } from "../../../shared/testing/fixed-clock.js";
 import { RecordingActivity } from "../../../shared/testing/recording-activity.js";
 import { RecordingEventBus } from "../../../shared/testing/recording-event-bus.js";
@@ -22,18 +23,20 @@ export function createPlatformTestContext() {
   const events = new RecordingEventBus();
   const activity = new RecordingActivity();
   const clock = new FixedClock();
+  const notifier = new RecordingNotifier();
   return {
     settings,
     requests,
     events,
     activity,
     clock,
+    notifier,
     launchAccess: new PlatformLaunchAccess(settings, requests),
     publicStatus: new GetPublicStatusUseCase(settings),
     status: new GetPlatformStatusUseCase(settings, requests),
     setLaunchMode: new SetLaunchModeUseCase(settings, requests, activity, clock),
     setPortalStatus: new SetPortalStatusUseCase(settings, requests, activity, clock),
-    submit: new SubmitAccessRequestUseCase(requests, activity, clock),
+    submit: new SubmitAccessRequestUseCase(requests, activity, clock, notifier),
     list: new ListAccessRequestsUseCase(requests),
     decide: new DecideAccessRequestUseCase(requests, events, activity, clock),
   };

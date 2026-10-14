@@ -1,0 +1,19 @@
+// Módulo das notificações: avisos dentro do portal (o sino), por conta.
+
+model Notification {
+  id          String    @id @db.Uuid
+  /// Conta que recebe. Sem chave estrangeira: o módulo não depende das
+  /// tabelas de outros módulos.
+  recipientId String    @map("recipient_id") @db.Uuid
+  kind        String
+  title       String
+  body        String?
+  link        String?
+  createdAt   DateTime  @map("created_at") @db.Timestamptz(3)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(3)
+
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@index([recipientId, readAt])
+  @@map("notifications")
+  @@schema("notifications")
+}

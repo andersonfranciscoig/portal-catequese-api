@@ -1,5 +1,6 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { EventBus } from "../../../../../shared/application/event-bus.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { UseCase } from "../../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import type { AccountRole } from "../../../domain/account-role.js";
@@ -26,6 +27,7 @@ export class SetAccountRolesUseCase implements UseCase<SetAccountRolesInput, Adm
     private readonly events: EventBus,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({ actorId, accountId, roles }: SetAccountRolesInput) {
@@ -52,6 +54,25 @@ export class SetAccountRolesUseCase implements UseCase<SetAccountRolesInput, Adm
         summary: `Alterou os papéis de ${account.fullName.value}: ${parts.join("; ")}`,
         targetAccountId: account.id.value,
       });
+      await this.notifier.notify(
+        added.includes("CATECHIST")
+          ? {
+              to: { accountIds: [account.id.value] },
+              kind: "identity.catechist_approved",
+              title: "Passou a ser catequista",
+              body: "A administração deu-lhe acesso ao portal de catequista.",
+              link: "/portal",
+              exceptAccountId: actorId,
+            }
+          : {
+              to: { accountIds: [account.id.value] },
+              kind: "identity.roles_changed",
+              title: "Os seus papéis foram atualizados",
+              body: `Agora: ${after.map((role) => ROLE_LABEL[role]).join(" e ")}.`,
+              link: "/conta",
+              exceptAccountId: actorId,
+            },
+      );
     }
     return toAdminAccountView(account);
   }

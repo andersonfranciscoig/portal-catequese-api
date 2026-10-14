@@ -1,3 +1,4 @@
+import type { Permission } from "../../../domain/account-role.js";
 import { Injectable } from "@nestjs/common";
 
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
@@ -72,6 +73,13 @@ export class PrismaAccountRepository extends AccountRepository {
       count({ betaAccess: true }),
     ]);
     return { total, blocked, pendingCatechists, coordination, admins, testers };
+  }
+
+  async findActiveWithAnyPermission(permissions: Permission[]) {
+    const rows = await this.prisma.account.findMany({
+      where: { status: "ACTIVE", permissions: { hasSome: permissions } },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
   }
 
   countActiveSuperAdmins(exceptId: UniqueId) {

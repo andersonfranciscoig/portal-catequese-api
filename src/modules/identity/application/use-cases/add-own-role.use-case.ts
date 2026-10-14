@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../shared/application/notifier.js";
 import type { EventBus } from "../../../../shared/application/event-bus.js";
 import type { UseCase } from "../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../shared/domain/clock.js";
@@ -29,6 +30,7 @@ export class AddOwnRoleUseCase implements UseCase<AddOwnRoleInput, AccountView> 
     private readonly events: EventBus,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({ accountId, role }: AddOwnRoleInput): Promise<AccountView> {
@@ -43,6 +45,16 @@ export class AddOwnRoleUseCase implements UseCase<AddOwnRoleInput, AccountView> 
       action: "identity.role_added",
       summary: SUMMARY[role],
     });
+    if (role === AccountRole.CATECHIST) {
+      await this.notifier.notify({
+        to: { permission: "APPROVE_CATECHISTS" },
+        kind: "identity.catechist_requested",
+        title: "Novo pedido de catequista",
+        body: `${account.fullName.value} pediu para ser também catequista.`,
+        link: "/dashboard/catequistas",
+        exceptAccountId: account.id.value,
+      });
+    }
     return toAccountView(account);
   }
 }

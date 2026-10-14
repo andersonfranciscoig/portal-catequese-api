@@ -75,3 +75,29 @@ export type YearOutcome = ValueOf<typeof YearOutcome>;
 
 /** Idade a partir da qual alguém se inscreve sozinho. */
 export const ADULT_AGE = 18;
+
+const LEVEL_LABEL: Record<CatechesisLevel, string> = {
+  BAPTISM_PRE: "Pré-Batismo",
+  BAPTISM_1: "Batismo · 1.º ano",
+  BAPTISM_2: "Batismo · 2.º ano",
+  BAPTISM_3: "Batismo · 3.º ano",
+  COMMUNION_PRE: "Pré-Comunhão",
+  COMMUNION_1: "Comunhão · 1.º ano",
+  COMMUNION_2: "Comunhão · 2.º ano",
+  COMMUNION_3: "Comunhão · 3.º ano",
+  BIBLICAL: "Bíblico",
+  CONFIRMATION_1: "Crisma · 1.º ano",
+  CONFIRMATION_2: "Crisma · 2.º ano",
+  CONFIRMATION_3: "Crisma · 3.º ano",
+};
+
+export const SLOT_LABEL: Record<SessionSlot, string> = {
+  SATURDAY_MORNING: "Sábado de manhã",
+  SATURDAY_AFTERNOON: "Sábado à tarde",
+  SUNDAY_AFTER_MASS: "Domingo, depois da missa",
+};
+
+/** "Comunhão · 1.º ano" (para mensagens e registo de atividade). */
+export function formatLevel(level: CatechesisLevel): string {
+  return LEVEL_LABEL[level];
+}

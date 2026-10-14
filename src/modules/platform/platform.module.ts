@@ -2,6 +2,7 @@ import { Global, Module } from "@nestjs/common";
 
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
 import { EventBus } from "../../shared/application/event-bus.js";
+import { Notifier } from "../../shared/application/notifier.js";
 import { LaunchAccessPolicy } from "../../shared/application/launch-access-policy.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
@@ -49,7 +50,7 @@ const REQUESTS = AccessRequestRepository;
     provideUseCase(GetPlatformStatusUseCase, [SETTINGS, REQUESTS]),
     provideUseCase(SetLaunchModeUseCase, [SETTINGS, REQUESTS, ActivityRecorder, Clock]),
     provideUseCase(SetPortalStatusUseCase, [SETTINGS, REQUESTS, ActivityRecorder, Clock]),
-    provideUseCase(SubmitAccessRequestUseCase, [REQUESTS, ActivityRecorder, Clock]),
+    provideUseCase(SubmitAccessRequestUseCase, [REQUESTS, ActivityRecorder, Clock, Notifier]),
     provideUseCase(ListAccessRequestsUseCase, [REQUESTS]),
     provideUseCase(DecideAccessRequestUseCase, [REQUESTS, EventBus, ActivityRecorder, Clock]),
   ],

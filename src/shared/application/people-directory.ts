@@ -20,4 +20,8 @@ export abstract class PeopleDirectory {
   abstract find(id: string): Promise<PersonSnapshot | null>;
   /** As que existirem, pela mesma ordem (ids desconhecidos ficam de fora). */
   abstract findMany(ids: string[]): Promise<PersonSnapshot[]>;
+  /** Contas ativas que têm a permissão em vigor (o super admin tem todas). */
+  abstract idsWithPermission(
+    permission: "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS",
+  ): Promise<string[]>;
 }

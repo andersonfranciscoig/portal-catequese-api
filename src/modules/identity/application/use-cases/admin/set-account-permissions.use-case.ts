@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { UseCase } from "../../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { Permission } from "../../../domain/account-role.js";
@@ -16,6 +17,36 @@ export interface SetAccountPermissionsInput {
   permissions: Permission[];
 }
 
+/** O que dizer à pessoa: o acesso mais importante que ganhou, ou o resumo. */
+function permissionsMessage(added: Permission[], removed: Permission[]) {
+  if (added.includes(Permission.SUPER_ADMIN)) {
+    return {
+      kind: "identity.admin_granted",
+      title: "Recebeu acesso à administração do portal",
+      link: "/admin",
+    };
+  }
+  if (added.includes(Permission.COORDINATION)) {
+    return {
+      kind: "identity.coordination_granted",
+      title: "Recebeu acesso à área da coordenação",
+      link: "/dashboard",
+    };
+  }
+  const label = (items: Permission[]) => items.map((item) => PERMISSION_LABEL[item]).join(", ");
+  return {
+    kind: "identity.permissions_changed",
+    title: "Os seus acessos foram atualizados",
+    body: [
+      added.length && `Novo: ${label(added)}.`,
+      removed.length && `Retirado: ${label(removed)}.`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    link: "/conta",
+  };
+}
+
 /** Substitui as permissões de uma conta (sem deixar o portal sem administração). */
 export class SetAccountPermissionsUseCase implements UseCase<
   SetAccountPermissionsInput,
@@ -25,6 +56,7 @@ export class SetAccountPermissionsUseCase implements UseCase<
     private readonly accounts: AccountRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({ actorId, accountId, permissions }: SetAccountPermissionsInput) {
@@ -61,6 +93,11 @@ export class SetAccountPermissionsUseCase implements UseCase<
         action: "identity.permissions_changed",
         summary: `Alterou as permissões de ${account.fullName.value}: ${parts.join("; ")}`,
         targetAccountId: account.id.value,
+      });
+      await this.notifier.notify({
+        to: { accountIds: [account.id.value] },
+        exceptAccountId: actorId,
+        ...permissionsMessage(added, removed),
       });
     }
     return toAdminAccountView(account);

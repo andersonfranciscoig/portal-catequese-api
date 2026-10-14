@@ -4,7 +4,7 @@ import {
 } from "../../../shared/application/people-directory.js";
 import { UniqueId } from "../../../shared/domain/unique-id.js";
 import type { Account } from "../domain/account.js";
-import { AccountApproval, AccountRole } from "../domain/account-role.js";
+import { AccountApproval, AccountRole, Permission } from "../domain/account-role.js";
 import type { AccountRepository } from "../domain/repositories/account.repository.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -43,5 +43,17 @@ export class IdentityPeopleDirectory extends PeopleDirectory {
       ]),
     );
     return unique.flatMap((id) => found.get(id) ?? []);
+  }
+
+  async idsWithPermission(permission: "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS") {
+    // As candidatas têm a permissão ou são administração geral; o domínio decide
+    // se está em vigor (ex.: aprovar catequistas exige também a coordenação).
+    const candidates = await this.accounts.findActiveWithAnyPermission([
+      Permission.SUPER_ADMIN,
+      permission,
+    ]);
+    return candidates
+      .filter((account) => account.hasPermission(permission))
+      .map((account) => account.id.value);
   }
 }

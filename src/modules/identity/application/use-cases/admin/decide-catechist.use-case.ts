@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { UseCase } from "../../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { AccountRole } from "../../../domain/account-role.js";
@@ -19,6 +20,7 @@ export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, Adm
     private readonly accounts: AccountRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute({ actorId, accountId, decision }: DecideCatechistInput) {
@@ -38,6 +40,28 @@ export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, Adm
       summary: `${decision === "APPROVED" ? "Aprovou" : "Recusou"} a conta de catequista de ${account.fullName.value}`,
       targetAccountId: account.id.value,
     });
+    await this.notifier.notify(
+      decision === "APPROVED"
+        ? {
+            to: { accountIds: [account.id.value] },
+            kind: "identity.catechist_approved",
+            title: "O seu pedido para ser catequista foi aceite",
+            body:
+              account.roles.length > 1
+                ? "Já pode usar o portal de catequista: troque de portal no menu da conta."
+                : "Já pode usar o portal de catequista.",
+            link: "/portal",
+            exceptAccountId: actorId,
+          }
+        : {
+            to: { accountIds: [account.id.value] },
+            kind: "identity.catechist_rejected",
+            title: "O seu pedido para ser catequista não foi aprovado",
+            body: "Para saber mais, fale com a coordenação da catequese.",
+            link: "/conta",
+            exceptAccountId: actorId,
+          },
+    );
     return toAdminAccountView(account);
   }
 }

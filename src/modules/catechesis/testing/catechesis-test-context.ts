@@ -1,3 +1,4 @@
+import { RecordingNotifier } from "../../../shared/testing/recording-notifier.js";
 import {
   PeopleDirectory,
   type PersonSnapshot,
@@ -66,6 +67,11 @@ export class FakePeopleDirectory extends PeopleDirectory {
   async findMany(ids: string[]) {
     return [...new Set(ids)].flatMap((id) => this.people.get(id) ?? []);
   }
+
+  /** Nos testes, a coordenação é a conta `IDS.coordinator`. */
+  async idsWithPermission() {
+    return [IDS.coordinator];
+  }
 }
 
 export const IDS = {
@@ -88,6 +94,7 @@ export function createCatechesisTestContext() {
   const evaluations = new InMemoryEvaluationRepository();
   const people = new FakePeopleDirectory();
   const activity = new RecordingActivity();
+  const notifier = new RecordingNotifier();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   let next = 0;
@@ -129,6 +136,7 @@ export function createCatechesisTestContext() {
     evaluations,
     people,
     activity,
+    notifier,
     clock,
     getCalendar: new GetCalendarUseCase(calendars),
     setCalendar: new SetCalendarUseCase(calendars, activity, clock),
@@ -150,18 +158,34 @@ export function createCatechesisTestContext() {
       codes,
       activity,
       clock,
+      notifier,
     ),
     myClass: new GetMyClassUseCase(resolver, attendance, people),
     roll: new GetRollUseCase(resolver, attendance),
-    saveRoll: new SaveRollUseCase(resolver, attendance, activity, clock),
+    saveRoll: new SaveRollUseCase(resolver, attendance, activity, clock, notifier),
     getEvaluations: new GetEvaluationsUseCase(resolver, attendance, evaluations),
     saveEvaluations: new SaveEvaluationsUseCase(resolver, attendance, evaluations, activity, clock),
     file: new GetClassCatechumenUseCase(resolver, attendance, evaluations, people),
     listClasses: new ListClassesUseCase(classes, enrollments, calendars, people, clock),
     createClass: new CreateClassUseCase(classes, calendars, people, activity, clock),
-    assign: new AssignCatechistsUseCase(classes, enrollments, calendars, people, activity, clock),
+    assign: new AssignCatechistsUseCase(
+      classes,
+      enrollments,
+      calendars,
+      people,
+      activity,
+      clock,
+      notifier,
+    ),
     listEnrollments: new ListEnrollmentsUseCase(enrollments, catechumens, calendars),
-    decide: new DecideEnrollmentUseCase(enrollments, classes, catechumens, activity, clock),
+    decide: new DecideEnrollmentUseCase(
+      enrollments,
+      classes,
+      catechumens,
+      activity,
+      clock,
+      notifier,
+    ),
 
     /** O ano 2026/2027 (catequese de 26 de setembro a 3 de julho). */
     async defineYear() {

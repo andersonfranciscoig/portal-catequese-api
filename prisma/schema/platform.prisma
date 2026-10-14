@@ -1,0 +1,63 @@
+// Módulo da plataforma: fase de lançamento, estado do portal e pedidos de acesso.
+
+enum LaunchMode {
+  BETA
+  PUBLIC
+
+  @@schema("platform")
+}
+
+enum AccessProfile {
+  GUARDIAN
+  CATECHUMEN
+  CATECHIST
+  COORDINATION
+
+  @@schema("platform")
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("platform")
+}
+
+/// Configuração única da plataforma (uma só linha, id = "platform").
+model PlatformSettings {
+  id              String     @id
+  launchMode      LaunchMode @default(BETA) @map("launch_mode")
+  launchChangedAt DateTime?  @map("launch_changed_at") @db.Timestamptz(3)
+  launchChangedBy String?    @map("launch_changed_by") @db.Uuid
+  portalOpen      Boolean    @default(true) @map("portal_open")
+  closedMessage   String?    @map("closed_message")
+  /// YYYY-MM-DD
+  reopensAt       String?    @map("reopens_at")
+  portalChangedAt DateTime?  @map("portal_changed_at") @db.Timestamptz(3)
+  portalChangedBy String?    @map("portal_changed_by") @db.Uuid
+
+  @@map("settings")
+  @@schema("platform")
+}
+
+model AccessRequest {
+  id           String              @id @db.Uuid
+  fullName     String              @map("full_name")
+  /// E.164: +2449XXXXXXXX
+  phone        String
+  email        String?
+  profile      AccessProfile
+  message      String?
+  status       AccessRequestStatus @default(PENDING)
+  createdAt    DateTime            @map("created_at") @db.Timestamptz(3)
+  decidedAt    DateTime?           @map("decided_at") @db.Timestamptz(3)
+  decidedBy    String?             @map("decided_by") @db.Uuid
+  decisionNote String?             @map("decision_note")
+
+  @@index([phone])
+  @@index([email])
+  @@index([status, createdAt])
+  @@map("access_requests")
+  @@schema("platform")
+}

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: catequese-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: catequese
+      POSTGRES_PASSWORD: catequese
+      POSTGRES_DB: catequese
+    # 5433 para não colidir com outros PostgreSQL locais na 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - catequese-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catequese -d catequese"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  catequese-postgres:

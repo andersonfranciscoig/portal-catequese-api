@@ -1,0 +1,30 @@
+// Módulo de auditoria: registo de atividade (quem fez o quê e quando).
+
+enum ActivityCategory {
+  AUTH
+  ENROLLMENT
+  FINANCE
+  SETTINGS
+  CATECHISTS
+  ADMIN
+
+  @@schema("audit")
+}
+
+model ActivityEntry {
+  id              String           @id @db.Uuid
+  /// Conta que fez a ação (vazio em ações anónimas). Sem chave estrangeira:
+  /// o módulo não depende das tabelas de outros módulos.
+  actorId         String?          @map("actor_id") @db.Uuid
+  category        ActivityCategory
+  action          String
+  summary         String
+  targetAccountId String?          @map("target_account_id") @db.Uuid
+  at              DateTime         @db.Timestamptz(3)
+
+  @@index([at])
+  @@index([actorId, at])
+  @@index([targetAccountId, at])
+  @@map("activity")
+  @@schema("audit")
+}

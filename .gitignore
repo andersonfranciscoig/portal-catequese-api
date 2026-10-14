@@ -1,0 +1,6 @@
+node_modules
+dist
+coverage
+.env
+*.tsbuildinfo
+src/shared/infrastructure/database/generated

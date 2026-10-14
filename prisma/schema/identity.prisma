@@ -1,0 +1,70 @@
+enum AccountRole {
+  GUARDIAN
+  CATECHUMEN
+  CATECHIST
+
+  @@schema("identity")
+}
+
+enum AccountApproval {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("identity")
+}
+
+enum AccountStatus {
+  ACTIVE
+  BLOCKED
+
+  @@schema("identity")
+}
+
+enum Permission {
+  SUPER_ADMIN
+  COORDINATION
+  FINANCE
+  LATE_ENROLLMENT
+  APPROVE_CATECHISTS
+
+  @@schema("identity")
+}
+
+model Account {
+  id            String           @id @db.Uuid
+  role          AccountRole
+  fullName      String           @map("full_name")
+  phone         String           @unique
+  email         String?          @unique
+  passwordHash  String           @map("password_hash")
+  approval      AccountApproval?
+  permissions   Permission[]
+  status        AccountStatus    @default(ACTIVE)
+  blockedReason String?          @map("blocked_reason")
+  blockedAt     DateTime?        @map("blocked_at") @db.Timestamptz(3)
+  /// Fase de lançamento: aceite como testadora.
+  betaAccess    Boolean          @default(false) @map("beta_access")
+  createdAt     DateTime         @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @map("updated_at") @db.Timestamptz(3)
+  sessions      Session[]
+
+  @@map("accounts")
+  @@schema("identity")
+}
+
+model Session {
+  id           String    @id @db.Uuid
+  accountId    String    @map("account_id") @db.Uuid
+  tokenHash    String    @unique @map("token_hash")
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt    DateTime  @map("created_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  replacedById String?   @map("replaced_by_id") @db.Uuid
+  userAgent    String?   @map("user_agent")
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("sessions")
+  @@schema("identity")
+}

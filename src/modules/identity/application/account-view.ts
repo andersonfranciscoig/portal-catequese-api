@@ -9,7 +9,8 @@ import type {
 /** Conta como é exposta fora do módulo (sem o hash da palavra-passe). */
 export interface AccountView {
   id: string;
-  role: AccountRole;
+  /** Papéis da conta (ex.: encarregado e catequista). */
+  roles: AccountRole[];
   fullName: string;
   phone: string;
   email?: string;
@@ -32,7 +33,7 @@ export interface AdminAccountView extends AccountView {
 export function toAccountView(account: Account): AccountView {
   return {
     id: account.id.value,
-    role: account.role,
+    roles: [...account.roles],
     fullName: account.fullName.value,
     phone: account.phone.value,
     email: account.email?.value,

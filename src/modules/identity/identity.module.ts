@@ -24,7 +24,9 @@ import { GrantBetaAccessByContactUseCase } from "./application/use-cases/admin/g
 import { ListAccountsUseCase } from "./application/use-cases/admin/list-accounts.use-case.js";
 import { SetAccountPermissionsUseCase } from "./application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "./application/use-cases/admin/set-beta-access.use-case.js";
+import { SetAccountRolesUseCase } from "./application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "./application/use-cases/admin/unblock-account.use-case.js";
+import { AddOwnRoleUseCase } from "./application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "./application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "./application/use-cases/change-password.use-case.js";
 import { GetCurrentAccountUseCase } from "./application/use-cases/get-current-account.use-case.js";
@@ -119,6 +121,7 @@ const AUDIT = ActivityRecorder;
     provideUseCase(GetCurrentAccountUseCase, [AccountRepository]),
     provideUseCase(UpdateProfileUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(ChangePasswordUseCase, [AccountRepository, PasswordHasher, AUDIT, Clock]),
+    provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock]),
     // Administração
     provideUseCase(ListAccountsUseCase, [AccountRepository]),
     provideUseCase(GetAccountUseCase, [AccountRepository]),
@@ -128,6 +131,7 @@ const AUDIT = ActivityRecorder;
     provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(SetBetaAccessUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(SetAccountRolesUseCase, [AccountRepository, EventBus, AUDIT, Clock]),
     provideUseCase(GrantBetaAccessByContactUseCase, [AccountRepository, Clock]),
     AuthGuard,
     PermissionsGuard,

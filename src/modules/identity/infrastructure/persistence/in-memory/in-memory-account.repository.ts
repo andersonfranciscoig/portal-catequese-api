@@ -42,7 +42,7 @@ export class InMemoryAccountRepository extends AccountRepository {
         ) {
           return false;
         }
-        if (query.role && account.role !== query.role) return false;
+        if (query.role && !account.hasRole(query.role)) return false;
         if (query.status === "active" && account.isBlocked) return false;
         if (query.status === "blocked" && !account.isBlocked) return false;
         if (query.status === "pending_approval" && account.approval !== "PENDING") return false;

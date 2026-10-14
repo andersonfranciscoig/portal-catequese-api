@@ -2,7 +2,7 @@ import type { AccountRole, Permission } from "../../domain/account-role.js";
 
 export interface AccessTokenClaims {
   accountId: string;
-  role: AccountRole;
+  roles: AccountRole[];
   permissions: Permission[];
 }
 

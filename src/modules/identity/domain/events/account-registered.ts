@@ -6,7 +6,7 @@ export class AccountRegistered implements DomainEvent {
 
   constructor(
     readonly aggregateId: string,
-    readonly role: AccountRole,
+    readonly roles: AccountRole[],
     readonly occurredAt: Date,
   ) {}
 }

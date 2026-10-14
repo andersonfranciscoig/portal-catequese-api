@@ -52,7 +52,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
     const { betaAccess } = await this.policy.assertCanRegister(phone.value, email?.value);
 
     const account = Account.register({
-      role: input.role,
+      roles: [input.role],
       fullName,
       phone,
       email,
@@ -66,10 +66,9 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
       actorId: account.id.value,
       category: "AUTH",
       action: "identity.account_registered",
-      summary:
-        account.role === "CATECHIST"
-          ? "Criou uma conta de catequista (por aprovar)"
-          : "Criou uma conta no portal",
+      summary: account.hasRole("CATECHIST")
+        ? "Criou uma conta de catequista (por aprovar)"
+        : "Criou uma conta no portal",
     });
 
     const { result } = await this.sessions.open(account, input.userAgent);

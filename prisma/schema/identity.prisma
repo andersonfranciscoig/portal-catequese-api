@@ -33,7 +33,8 @@ enum Permission {
 
 model Account {
   id            String           @id @db.Uuid
-  role          AccountRole
+  /// Papéis da conta (ex.: encarregado e catequista).
+  roles         AccountRole[]
   fullName      String           @map("full_name")
   phone         String           @unique
   email         String?          @unique

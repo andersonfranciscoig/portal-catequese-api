@@ -17,7 +17,9 @@ import { GrantBetaAccessByContactUseCase } from "../application/use-cases/admin/
 import { ListAccountsUseCase } from "../application/use-cases/admin/list-accounts.use-case.js";
 import { SetAccountPermissionsUseCase } from "../application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "../application/use-cases/admin/set-beta-access.use-case.js";
+import { SetAccountRolesUseCase } from "../application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "../application/use-cases/admin/unblock-account.use-case.js";
+import { AddOwnRoleUseCase } from "../application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "../application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "../application/use-cases/change-password.use-case.js";
 import { GetCurrentAccountUseCase } from "../application/use-cases/get-current-account.use-case.js";
@@ -55,13 +57,13 @@ export function createIdentityTestContext() {
     fullName: string;
     phone: string;
     email?: string;
-    role?: AccountRole;
+    roles?: AccountRole[];
     permissions?: Permission[];
     betaAccess?: boolean;
     password?: string;
   }) {
     const account = Account.register({
-      role: options.role ?? "GUARDIAN",
+      roles: options.roles ?? ["GUARDIAN"],
       fullName: FullName.create(options.fullName),
       phone: PhoneNumber.create(options.phone),
       email: options.email ? Email.create(options.email) : undefined,
@@ -91,6 +93,8 @@ export function createIdentityTestContext() {
     currentAccount: new GetCurrentAccountUseCase(accounts),
     updateProfile: new UpdateProfileUseCase(accounts, activity, clock),
     changePassword: new ChangePasswordUseCase(accounts, hasher, activity, clock),
+    addOwnRole: new AddOwnRoleUseCase(accounts, events, activity, clock),
+    setRoles: new SetAccountRolesUseCase(accounts, events, activity, clock),
     listAccounts: new ListAccountsUseCase(accounts),
     getAccount: new GetAccountUseCase(accounts),
     stats: new GetAccountStatsUseCase(accounts),

@@ -12,6 +12,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import type { AccessTokenClaims } from "../../application/ports/access-token-issuer.js";
+import { AddOwnRoleUseCase } from "../../application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "../../application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "../../application/use-cases/change-password.use-case.js";
 import { GetCurrentAccountUseCase } from "../../application/use-cases/get-current-account.use-case.js";
@@ -23,11 +24,13 @@ import { ApiZodBody } from "../../../../shared/presentation/http/api-zod.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import { CurrentAccount } from "./decorators/current-account.decorator.js";
 import {
+  addRoleSchema,
   changePasswordSchema,
   loginSchema,
   profileSchema,
   refreshSchema,
   registerSchema,
+  type AddRoleBody,
   type ChangePasswordBody,
   type LoginBody,
   type ProfileBody,
@@ -47,7 +50,18 @@ export class AuthController {
     private readonly currentAccount: GetCurrentAccountUseCase,
     private readonly updateProfile: UpdateProfileUseCase,
     private readonly changePassword: ChangePasswordUseCase,
+    private readonly addOwnRole: AddOwnRoleUseCase,
   ) {}
+
+  /** Acrescenta um papel à própria conta (ex.: "também sou catequista"). */
+  @Post("me/roles")
+  @UseGuards(AuthGuard)
+  addRole(
+    @CurrentAccount() account: AccessTokenClaims,
+    @Body(new ZodValidationPipe(addRoleSchema)) body: AddRoleBody,
+  ) {
+    return this.addOwnRole.execute({ accountId: account.accountId, role: body.role });
+  }
 
   /** Cria a conta e devolve logo a sessão. */
   @Post("register")

@@ -102,6 +102,11 @@ Erros: `{ statusCode, code, message }` com códigos estáveis (ex.:
 | `GET`   | `/auth/me`          | conta autenticada                                                      |
 | `PATCH` | `/auth/me`          | altera nome, telefone, email                                           |
 | `POST`  | `/auth/me/password` | muda a palavra-passe                                                   |
+| `POST`  | `/auth/me/roles`    | acrescenta um papel à própria conta (catequista fica por aprovar)      |
+
+Papéis: uma conta pode ter vários (`GUARDIAN`, `CATECHUMEN`, `CATECHIST`) — por
+exemplo, um catequista que também é encarregado de educação. O papel de
+catequista precisa de aprovação.
 
 Regras de entrada: conta bloqueada não entra; portal encerrado → só a
 administração; fase de testes → só contas com acesso de testes e a
@@ -125,6 +130,7 @@ administração. A renovação da sessão volta a verificar estas regras.
 | `POST` | `/admin/accounts/:id/block`                    | bloqueia (com motivo) e termina as sessões                                           |
 | `POST` | `/admin/accounts/:id/unblock`                  | desbloqueia                                                                          |
 | `POST` | `/admin/accounts/:id/catechist-decision`       | aprova/recusa um catequista                                                          |
+| `PUT`  | `/admin/accounts/:id/roles`                    | define os papéis (catequista acrescentado fica aprovado)                             |
 | `PUT`  | `/admin/accounts/:id/beta-access`              | dá/retira acesso de testes                                                           |
 | `GET`  | `/admin/platform/status`                       | estado completo + pedidos por decidir                                                |
 | `PUT`  | `/admin/platform/launch`                       | `BETA` ou `PUBLIC` (abrir a todos)                                                   |

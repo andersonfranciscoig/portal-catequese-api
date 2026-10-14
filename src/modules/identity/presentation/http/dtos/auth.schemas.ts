@@ -50,6 +50,10 @@ export const changePasswordSchema = z.object({
 
 export type ChangePasswordBody = z.infer<typeof changePasswordSchema>;
 
+export const addRoleSchema = z.object({ role: z.enum(AccountRole) });
+
+export type AddRoleBody = z.infer<typeof addRoleSchema>;
+
 /* ───────────── Administração ───────────── */
 
 export const accountQuerySchema = z.object({
@@ -76,6 +80,10 @@ export type BlockBody = z.infer<typeof blockSchema>;
 export const catechistDecisionSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]) });
 
 export type CatechistDecisionBody = z.infer<typeof catechistDecisionSchema>;
+
+export const rolesSchema = z.object({ roles: z.array(z.enum(AccountRole)).min(1).max(3) });
+
+export type RolesBody = z.infer<typeof rolesSchema>;
 
 export const betaAccessSchema = z.object({ betaAccess: z.boolean() });
 

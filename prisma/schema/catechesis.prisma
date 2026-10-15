@@ -120,7 +120,8 @@ model Catechumen {
   createdAt            DateTime              @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime              @map("updated_at") @db.Timestamptz(3)
 
-  enrollments Enrollment[]
+  enrollments     Enrollment[]
+  sacramentChecks SacramentRequirementCheck[]
 
   @@index([guardianAccountId])
   @@index([accountId])
@@ -295,5 +296,55 @@ model CatechistAttendance {
 
   @@id([classId, date])
   @@map("catechist_attendance")
+  @@schema("catechesis")
+}
+
+enum SacramentType {
+  BAPTISM
+  FIRST_COMMUNION
+  CONFIRMATION
+
+  @@schema("catechesis")
+}
+
+/// O que a coordenação marca à mão (os documentos online e o percurso contam sozinhos).
+enum SacramentRequirement {
+  BIRTH_CERTIFICATE
+  BAPTISM_CERTIFICATE
+  RECONCILIATION
+  GODPARENT
+  PARENTS_MEETING
+
+  @@schema("catechesis")
+}
+
+/// Data e local de cada celebração do ano (definidos pela coordenação).
+model SacramentCelebration {
+  catecheticalYear String        @map("catechetical_year")
+  type             SacramentType
+  /// YYYY-MM-DD
+  date             String
+  place            String
+  updatedAt        DateTime      @map("updated_at") @db.Timestamptz(3)
+  updatedBy        String?       @map("updated_by") @db.Uuid
+
+  @@id([catecheticalYear, type])
+  @@map("sacrament_celebrations")
+  @@schema("catechesis")
+}
+
+/// Requisito de um candidato marcado pela coordenação (entregue / feito).
+model SacramentRequirementCheck {
+  catechumenId String               @map("catechumen_id") @db.Uuid
+  sacrament    SacramentType
+  requirement  SacramentRequirement
+  met          Boolean
+  updatedAt    DateTime             @map("updated_at") @db.Timestamptz(3)
+  updatedBy    String               @map("updated_by") @db.Uuid
+
+  catechumen Catechumen @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+
+  @@id([catechumenId, sacrament, requirement])
+  @@map("sacrament_requirement_checks")
   @@schema("catechesis")
 }

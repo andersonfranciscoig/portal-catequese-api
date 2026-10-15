@@ -247,6 +247,19 @@ Gestão da coordenação (permissão `COORDINATION`):
 | `PUT`          | `/coordination/attendance/:date/catechists/:classId`  | presença do catequista                                                        |
 | `GET`          | `/coordination/catechumens` · `/:id`                  | catequizandos do ano; ficha com o percurso                                    |
 
+Sacramentos e relatórios (coordenação):
+
+| Método | Rota                                                                                | Descrição                                                                     |
+| ------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`  | `/coordination/sacraments`                                                          | celebrações do ano, candidatos e quantos estão prontos                        |
+| `PUT`  | `/coordination/sacraments/:type/celebration`                                        | data e local da celebração (`null` volta aos por omissão)                     |
+| `GET`  | `/coordination/sacraments/:type/candidates`                                         | candidatos e requisitos (`search`, `filter`: `ALL` · `READY` · `PENDING`)     |
+| `PUT`  | `/coordination/sacraments/:type/candidates/:catechumenId/requirements/:requirement` | marca um requisito entregue (`{ met }`)                                       |
+| `GET`  | `/coordination/reports`                                                             | indicadores do ano (pagamentos só com `FINANCE`)                              |
+| `GET`  | `/coordination/reports/exports/:kind`                                               | CSV: `catechumens`, `classes`, `catechist-attendance`, `payments` (`FINANCE`) |
+
+Candidatos: o último ano da etapa (`BAPTISM_3`, `COMMUNION_3`, `CONFIRMATION_3`) com a matrícula aceite. O batismo e a Primeira Comunhão vêm do percurso; as certidões contam sozinhas quando a família as envia online; o resto marca a coordenação. Sem data marcada, o Batismo fica na Vigília Pascal.
+
 Público (sem conta):
 
 | Método | Rota                        | Descrição                                                                           |

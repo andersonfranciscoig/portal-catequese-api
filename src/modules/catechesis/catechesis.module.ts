@@ -4,10 +4,12 @@ import { ActivityRecorder } from "../../shared/application/activity-recorder.js"
 import { EventBus } from "../../shared/application/event-bus.js";
 import { FileStorage, UploadPolicy } from "../../shared/application/file-storage.js";
 import { Notifier } from "../../shared/application/notifier.js";
+import { PaymentsLedger } from "../../shared/application/payments-ledger.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { IdentityModule } from "../identity/index.js";
+import { PaymentsModule } from "../payments/index.js";
 import { CatechesisAccess } from "./application/catechesis-access.js";
 import { CatechistClassResolver } from "./application/catechist-class.js";
 import { EnrollmentCodes } from "./application/enrollment-codes.js";
@@ -60,6 +62,7 @@ import {
   EnrollmentDocumentRepository,
   EnrollmentRepository,
   EvaluationRepository,
+  SacramentRepository,
 } from "./domain/repositories/catechesis.repositories.js";
 import {
   PrismaAttendanceRepository,
@@ -71,6 +74,7 @@ import {
   PrismaEnrollmentDocumentRepository,
   PrismaEnrollmentRepository,
   PrismaEvaluationRepository,
+  PrismaSacramentRepository,
 } from "./infrastructure/persistence/prisma/prisma-catechesis.repositories.js";
 import { CatechistController } from "./presentation/http/catechist.controller.js";
 import { CoordinationManagementController } from "./presentation/http/coordination-management.controller.js";
@@ -102,6 +106,19 @@ import {
   PlanClassesUseCase,
 } from "./application/use-cases/coordination/class-generation.use-cases.js";
 import { GetOverviewUseCase } from "./application/use-cases/coordination/overview.use-case.js";
+import {
+  ExportReportUseCase,
+  GetReportUseCase,
+} from "./application/use-cases/coordination/reports.use-cases.js";
+import {
+  GetSacramentsOverviewUseCase,
+  ListSacramentCandidatesUseCase,
+  SacramentCandidates,
+  SetCelebrationUseCase,
+  SetSacramentRequirementUseCase,
+} from "./application/use-cases/coordination/sacraments.use-cases.js";
+import { CoordinationReportsController } from "./presentation/http/coordination-reports.controller.js";
+import { CoordinationSacramentsController } from "./presentation/http/coordination-sacraments.controller.js";
 import { TrackEnrollmentUseCase } from "./application/use-cases/public/track-enrollment.use-case.js";
 import { CoordinationController } from "./presentation/http/coordination.controller.js";
 import { FamilyController } from "./presentation/http/family.controller.js";
@@ -119,19 +136,23 @@ const DOCUMENTS = EnrollmentDocumentRepository;
 const CANDIDATES = ConfirmationCandidates;
 const PROFILES = CatechistProfileRepository;
 const PRESENCE = CatechistPresenceRepository;
+const SACRAMENTS = SacramentRepository;
 
 /**
  * Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
  * Das contas só conhece o contrato `PeopleDirectory` (implementado pela identidade).
  */
 @Module({
-  // A identidade dá os guards (sessão e permissões) e o diretório de pessoas.
-  imports: [IdentityModule],
+  // A identidade dá os guards (sessão e permissões) e o diretório de pessoas;
+  // os pagamentos, o contrato `PaymentsLedger` (relatórios).
+  imports: [IdentityModule, PaymentsModule],
   controllers: [
     FamilyController,
     CatechistController,
     CoordinationController,
     CoordinationManagementController,
+    CoordinationSacramentsController,
+    CoordinationReportsController,
     PublicCatechesisController,
   ],
   providers: [
@@ -144,6 +165,7 @@ const PRESENCE = CatechistPresenceRepository;
     { provide: DOCUMENTS, useClass: PrismaEnrollmentDocumentRepository },
     { provide: PROFILES, useClass: PrismaCatechistProfileRepository },
     { provide: PRESENCE, useClass: PrismaCatechistPresenceRepository },
+    { provide: SACRAMENTS, useClass: PrismaSacramentRepository },
     RateLimitGuard,
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
@@ -323,6 +345,46 @@ const PRESENCE = CatechistPresenceRepository;
       AUDIT,
       Clock,
       Notifier,
+    ]),
+    // Sacramentos
+    provideUseCase(SacramentCandidates, [
+      CALENDAR,
+      ENROLLMENTS,
+      CATECHUMENS,
+      CLASSES,
+      ATTENDANCE,
+      DOCUMENTS,
+      SACRAMENTS,
+      PEOPLE,
+    ]),
+    provideUseCase(GetSacramentsOverviewUseCase, [SacramentCandidates]),
+    provideUseCase(ListSacramentCandidatesUseCase, [SacramentCandidates]),
+    provideUseCase(SetSacramentRequirementUseCase, [
+      SacramentCandidates,
+      SACRAMENTS,
+      CATECHUMENS,
+      AUDIT,
+      Clock,
+    ]),
+    provideUseCase(SetCelebrationUseCase, [SacramentCandidates, SACRAMENTS, AUDIT, Clock]),
+    // Relatórios
+    provideUseCase(GetReportUseCase, [
+      CALENDAR,
+      ENROLLMENTS,
+      CLASSES,
+      ATTENDANCE,
+      EVALUATIONS,
+      PaymentsLedger,
+      Clock,
+    ]),
+    provideUseCase(ExportReportUseCase, [
+      CALENDAR,
+      ENROLLMENTS,
+      ListCatechumensUseCase,
+      ListClassesUseCase,
+      ListSessionDaysUseCase,
+      GetSessionUseCase,
+      PaymentsLedger,
     ]),
   ],
 })

@@ -100,6 +100,25 @@ async function main() {
       },
     });
     console.log("Ano catequético 2026/2027 definido (com os prazos das famílias).");
+
+    // Celebrações do ano (só cria; a coordenação muda-as em Sacramentos).
+    for (const [type, date] of [
+      ["FIRST_COMMUNION", "2027-05-30"],
+      ["CONFIRMATION", "2027-06-20"],
+    ] as const) {
+      await prisma.sacramentCelebration.upsert({
+        where: { catecheticalYear_type: { catecheticalYear: "2026/2027", type } },
+        update: {},
+        create: {
+          catecheticalYear: "2026/2027",
+          type,
+          date,
+          place: "Igreja Cristo Rei da Paz",
+          updatedAt: now,
+        },
+      });
+    }
+    console.log("Primeira Comunhão e Crisma de 2026/2027 marcadas.");
   } finally {
     await prisma.$disconnect();
   }

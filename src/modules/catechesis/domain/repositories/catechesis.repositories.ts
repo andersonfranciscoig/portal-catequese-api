@@ -8,6 +8,7 @@ import type { AttendanceEntry, ClassAttendance } from "../class-attendance.js";
 import type { Enrollment } from "../enrollment.js";
 import type { EnrollmentDocument } from "../enrollment-document.js";
 import type { Evaluation } from "../evaluation.js";
+import type { RequirementCheck, SacramentCelebration, SacramentType } from "../sacraments.js";
 
 /*
  * Persistência do módulo da catequese. O domínio e a aplicação só conhecem
@@ -83,6 +84,7 @@ export abstract class EvaluationRepository {
 export abstract class EnrollmentDocumentRepository {
   abstract findById(id: UniqueId): Promise<EnrollmentDocument | null>;
   abstract listForEnrollment(enrollmentId: string): Promise<EnrollmentDocument[]>;
+  abstract listForEnrollments(enrollmentIds: string[]): Promise<EnrollmentDocument[]>;
   /**
    * Guarda o documento; se já havia um do mesmo tipo, substitui-o e devolve o
    * anterior (para apagar o ficheiro antigo).
@@ -100,4 +102,15 @@ export abstract class CatechistPresenceRepository {
   abstract listForDate(date: string): Promise<CatechistPresence[]>;
   abstract listForClasses(classIds: string[]): Promise<CatechistPresence[]>;
   abstract save(presence: CatechistPresence): Promise<void>;
+}
+
+export abstract class SacramentRepository {
+  abstract listCelebrations(catecheticalYear: string): Promise<SacramentCelebration[]>;
+  abstract saveCelebration(celebration: SacramentCelebration): Promise<void>;
+  abstract deleteCelebration(catecheticalYear: string, type: SacramentType): Promise<void>;
+  abstract listChecks(
+    catechumenIds: string[],
+    sacrament: SacramentType,
+  ): Promise<RequirementCheck[]>;
+  abstract saveCheck(check: RequirementCheck): Promise<void>;
 }

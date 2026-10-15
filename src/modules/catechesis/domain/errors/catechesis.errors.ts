@@ -85,3 +85,15 @@ export class DocumentNotFoundError extends error(
 ) {}
 export class ConfirmationNotAllowedError extends error("validation", "confirmation_not_allowed") {}
 export class DeadlineClosedError extends error("forbidden", "deadline_closed") {}
+
+export class InvalidSacramentError extends error("validation", "invalid_sacrament") {}
+export class SacramentCandidateNotFoundError extends error(
+  "not_found",
+  "sacrament_candidate_not_found",
+  "Este catequizando não é candidato a esta celebração no ano em curso.",
+) {}
+export class ReportNotAllowedError extends error(
+  "forbidden",
+  "report_not_allowed",
+  "Os pagamentos só estão disponíveis para quem tem acesso ao financeiro.",
+) {}

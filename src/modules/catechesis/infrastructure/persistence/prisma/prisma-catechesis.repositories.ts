@@ -20,6 +20,11 @@ import type { EnrollmentStatus } from "../../../domain/catechesis.js";
 import { Enrollment, type EnrollmentEvent } from "../../../domain/enrollment.js";
 import { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
+import type {
+  RequirementCheck,
+  SacramentCelebration,
+  SacramentType,
+} from "../../../domain/sacraments.js";
 import {
   AttendanceRepository,
   CalendarRepository,
@@ -31,6 +36,7 @@ import {
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
+  SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 
 const CALENDAR_ID = CatecheticalCalendar.ID.value;
@@ -560,6 +566,13 @@ export class PrismaEnrollmentDocumentRepository extends EnrollmentDocumentReposi
     return rows.map(toDocument);
   }
 
+  async listForEnrollments(enrollmentIds: string[]) {
+    const rows = await this.prisma.enrollmentDocument.findMany({
+      where: { enrollmentId: { in: validIds(enrollmentIds) } },
+    });
+    return rows.map(toDocument);
+  }
+
   async save(document: EnrollmentDocument) {
     const where = {
       enrollmentId_kind: { enrollmentId: document.enrollmentId, kind: document.kind },
@@ -654,6 +667,67 @@ export class PrismaCatechistPresenceRepository extends CatechistPresenceReposito
     await this.prisma.catechistAttendance.upsert({
       where: { classId_date: { classId: presence.classId, date: presence.date } },
       create: { classId: presence.classId, date: presence.date, ...data },
+      update: data,
+    });
+  }
+}
+
+@Injectable()
+export class PrismaSacramentRepository extends SacramentRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listCelebrations(catecheticalYear: string): Promise<SacramentCelebration[]> {
+    const rows = await this.prisma.sacramentCelebration.findMany({ where: { catecheticalYear } });
+    return rows.map((row) => ({ ...row, updatedBy: orUndefined(row.updatedBy) }));
+  }
+
+  async saveCelebration(celebration: SacramentCelebration) {
+    const data = {
+      date: celebration.date,
+      place: celebration.place,
+      updatedAt: celebration.updatedAt,
+      updatedBy: celebration.updatedBy ?? null,
+    };
+    await this.prisma.sacramentCelebration.upsert({
+      where: {
+        catecheticalYear_type: {
+          catecheticalYear: celebration.catecheticalYear,
+          type: celebration.type,
+        },
+      },
+      create: { catecheticalYear: celebration.catecheticalYear, type: celebration.type, ...data },
+      update: data,
+    });
+  }
+
+  async deleteCelebration(catecheticalYear: string, type: SacramentType) {
+    await this.prisma.sacramentCelebration.deleteMany({ where: { catecheticalYear, type } });
+  }
+
+  async listChecks(catechumenIds: string[], sacrament: SacramentType): Promise<RequirementCheck[]> {
+    return this.prisma.sacramentRequirementCheck.findMany({
+      where: { sacrament, catechumenId: { in: validIds(catechumenIds) } },
+    });
+  }
+
+  async saveCheck(check: RequirementCheck) {
+    const data = { met: check.met, updatedAt: check.updatedAt, updatedBy: check.updatedBy };
+    await this.prisma.sacramentRequirementCheck.upsert({
+      where: {
+        catechumenId_sacrament_requirement: {
+          catechumenId: check.catechumenId,
+          sacrament: check.sacrament,
+          requirement: check.requirement,
+        },
+      },
+      create: {
+        catechumenId: check.catechumenId,
+        sacrament: check.sacrament,
+        requirement: check.requirement,
+        ...data,
+      },
       update: data,
     });
   }

@@ -92,6 +92,13 @@ export class PrismaPaymentRepository extends PaymentRepository {
     return rows.map(toPayment);
   }
 
+  async listForEnrollments(enrollmentIds: string[]) {
+    const ids = enrollmentIds.filter((id) => UUID.test(id));
+    if (!ids.length) return [];
+    const rows = await this.prisma.payment.findMany({ where: { enrollmentId: { in: ids } } });
+    return rows.map(toPayment);
+  }
+
   async save(payment: Payment) {
     const data = {
       status: payment.status,

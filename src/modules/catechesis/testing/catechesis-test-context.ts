@@ -90,7 +90,31 @@ import {
   InMemoryEnrollmentDocumentRepository,
   InMemoryEnrollmentRepository,
   InMemoryEvaluationRepository,
+  InMemorySacramentRepository,
 } from "../infrastructure/persistence/in-memory/in-memory-catechesis.repositories.js";
+import {
+  PaymentsLedger,
+  type PaymentSnapshot,
+} from "../../../shared/application/payments-ledger.js";
+import {
+  ExportReportUseCase,
+  GetReportUseCase,
+} from "../application/use-cases/coordination/reports.use-cases.js";
+import {
+  GetSacramentsOverviewUseCase,
+  ListSacramentCandidatesUseCase,
+  SacramentCandidates,
+  SetCelebrationUseCase,
+  SetSacramentRequirementUseCase,
+} from "../application/use-cases/coordination/sacraments.use-cases.js";
+
+/** Pagamentos falsos (o módulo dos pagamentos não entra nos testes da catequese). */
+export class FakePaymentsLedger extends PaymentsLedger {
+  readonly items: PaymentSnapshot[] = [];
+  async listForEnrollments(enrollmentIds: string[]) {
+    return this.items.filter((item) => enrollmentIds.includes(item.enrollmentId));
+  }
+}
 
 /** Diretório de pessoas falso: as contas que cada teste precisar. */
 export class FakePeopleDirectory extends PeopleDirectory {
@@ -158,6 +182,8 @@ export function createCatechesisTestContext() {
   const policy = new UploadPolicy(1024 * 1024);
   const profiles = new InMemoryCatechistProfileRepository();
   const presence = new InMemoryCatechistPresenceRepository();
+  const sacramentRepository = new InMemorySacramentRepository();
+  const ledger = new FakePaymentsLedger();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   let next = 0;
@@ -201,6 +227,8 @@ export function createCatechesisTestContext() {
   people.add({ id: IDS.stranger, fullName: "Rosa Afonso" });
 
   const ctx = {
+    ledger,
+    sacramentRepository,
     events,
     documents,
     storage,
@@ -349,6 +377,52 @@ export function createCatechesisTestContext() {
       return {
         list: new ListCatechistsUseCase(directory),
         profile: new GetCatechistProfileUseCase(directory),
+      };
+    },
+    get sacraments() {
+      const candidates = new SacramentCandidates(
+        calendars,
+        enrollments,
+        catechumens,
+        classes,
+        attendance,
+        documents,
+        sacramentRepository,
+        people,
+      );
+      return {
+        overview: new GetSacramentsOverviewUseCase(candidates),
+        candidates: new ListSacramentCandidatesUseCase(candidates),
+        setRequirement: new SetSacramentRequirementUseCase(
+          candidates,
+          sacramentRepository,
+          catechumens,
+          activity,
+          clock,
+        ),
+        setCelebration: new SetCelebrationUseCase(candidates, sacramentRepository, activity, clock),
+      };
+    },
+    get reports() {
+      return {
+        report: new GetReportUseCase(
+          calendars,
+          enrollments,
+          classes,
+          attendance,
+          evaluations,
+          ledger,
+          clock,
+        ),
+        export: new ExportReportUseCase(
+          calendars,
+          enrollments,
+          ctx.listCatechumens,
+          ctx.listClasses,
+          ctx.sessionDays,
+          ctx.session,
+          ledger,
+        ),
       };
     },
     get generation() {

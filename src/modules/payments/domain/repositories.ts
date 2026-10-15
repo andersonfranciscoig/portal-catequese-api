@@ -13,6 +13,7 @@ export abstract class PaymentRepository {
   abstract findByCode(enrollmentCode: string): Promise<Payment | null>;
   abstract listForPayer(accountId: string): Promise<Payment[]>;
   abstract listAll(): Promise<Payment[]>;
+  abstract listForEnrollments(enrollmentIds: string[]): Promise<Payment[]>;
   abstract save(payment: Payment): Promise<void>;
 }
 

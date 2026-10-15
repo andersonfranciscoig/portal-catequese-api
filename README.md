@@ -16,6 +16,7 @@ microserviço sem reescrever os restantes.
 | `audit`         | registo de atividade (quem fez o quê e quando)                                              |
 | `notifications` | avisos dentro do portal (o sino) para cada conta                                            |
 | `catechesis`    | ano catequético, catequizandos, matrículas, turmas, presenças e avaliações                  |
+| `payments`      | taxas de matrícula e confirmação, comprovativos, numerário, preços e contas da paróquia     |
 
 ```
 src/
@@ -182,12 +183,17 @@ Quem fez a ação nunca é notificado dela.
 
 Portal da família — encarregado (educandos menores) ou adulto (o próprio):
 
-| Método | Rota                  | Descrição                                                                        |
-| ------ | --------------------- | -------------------------------------------------------------------------------- |
-| `GET`  | `/me/family`          | educandos (ou o próprio) com a matrícula e a turma do ano, e todas as matrículas |
-| `GET`  | `/me/enrollments`     | todas as matrículas da família                                                   |
-| `GET`  | `/me/catechumens/:id` | perfil: matrícula, turma, sacramentos e presenças do ano                         |
-| `POST` | `/me/enrollments`     | matrícula (`guardian` presente = educando menor; sem ele = o próprio adulto)     |
+| Método | Rota                                             | Descrição                                                                                         |
+| ------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `GET`  | `/me/family`                                     | educandos (ou o próprio) com a matrícula e a turma do ano, e todas as matrículas                  |
+| `GET`  | `/me/enrollments`                                | todas as matrículas da família                                                                    |
+| `GET`  | `/me/catechumens/:id`                            | perfil: matrícula, turma, sacramentos e presenças do ano                                          |
+| `POST` | `/me/enrollments`                                | matrícula (`guardian` presente = educando menor; sem ele = o próprio adulto; `documentsInPerson`) |
+| `GET`  | `/me/enrollments/:id/documents`                  | documentos enviados                                                                               |
+| `POST` | `/me/enrollments/:id/documents`                  | anexa um documento (`multipart`: `kind` = `ID`, `BAPTISM` ou `PHOTO`, `file`)                     |
+| `GET`  | `/me/enrollments/:id/documents/:documentId/file` | abre o documento                                                                                  |
+| `GET`  | `/me/confirmations`                              | anos concluídos: pode confirmar, já confirmou ou terminou o percurso                              |
+| `POST` | `/me/confirmations`                              | confirma no novo ano (nível seguinte ou o mesmo, se repete); fica aprovada                        |
 
 Portal do catequista (papel de catequista aprovado), sempre a turma do ano em curso:
 
@@ -202,20 +208,60 @@ Portal do catequista (papel de catequista aprovado), sempre a turma do ano em cu
 
 Coordenação (permissão `COORDINATION`):
 
-| Método | Rota                                     | Descrição                                                |
-| ------ | ---------------------------------------- | -------------------------------------------------------- |
-| `GET`  | `/coordination/calendar`                 | ano catequético em curso                                 |
-| `PUT`  | `/coordination/calendar`                 | define o ano e as datas da catequese                     |
-| `GET`  | `/coordination/classes`                  | turmas do ano (catequistas, inscritos, próximo encontro) |
-| `POST` | `/coordination/classes`                  | cria uma turma                                           |
-| `PUT`  | `/coordination/classes/:id/catechists`   | catequistas da turma (aprovados, um principal)           |
-| `GET`  | `/coordination/enrollments`              | matrículas do ano (`status`)                             |
-| `POST` | `/coordination/enrollments/:id/decision` | confirma numa turma (mesmo nível, com lugar) ou recusa   |
+| Método | Rota                                                       | Descrição                                                                                                         |
+| ------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/coordination/calendar`                                   | ano catequético em curso                                                                                          |
+| `PUT`  | `/coordination/calendar`                                   | define o ano e as datas da catequese                                                                              |
+| `GET`  | `/coordination/classes`                                    | turmas do ano (catequistas, inscritos, próximo encontro)                                                          |
+| `POST` | `/coordination/classes`                                    | cria uma turma                                                                                                    |
+| `PUT`  | `/coordination/classes/:id/catechists`                     | catequistas da turma (aprovados, um principal)                                                                    |
+| `GET`  | `/coordination/enrollments`                                | matrículas do ano (`tab`, `search`, `stage`, `type`, `sort`, `page`, `pageSize`) com os números de cada separador |
+| `GET`  | `/coordination/enrollments/:id`                            | detalhe: dados, encarregado, documentos, histórico e turmas possíveis                                             |
+| `POST` | `/coordination/enrollments/:id/actions`                    | `approve`, `request-documents`, `confirm` (turma do mesmo nível, com lugar), `reject`, `waitlist`, `reopen`       |
+| `GET`  | `/coordination/enrollments/:id/documents/:documentId/file` | abre um documento                                                                                                 |
+| `GET`  | `/coordination/confirmations`                              | procura matrículas do ano anterior (`search`)                                                                     |
+| `POST` | `/coordination/confirmations`                              | confirma em nome da família                                                                                       |
 
 Regras: uma matrícula por catequizando em cada ano; menores são inscritos pelo
 encarregado e adultos (18+) por si; os encontros são semanais (sábado ou
 domingo, conforme o período) entre o início e o fim do ano, e só se lançam
 presenças de encontros que já aconteceram. O seed cria o ano 2026/2027.
+
+### Pagamentos (`payments`)
+
+Cada matrícula ou confirmação submetida gera a taxa a pagar (evento
+`catechesis.enrollment_submitted`), com o preço em vigor. A família paga por
+transferência (anexa o comprovativo) ou em numerário na secretaria (a
+coordenação regista). O pagamento online (Multicaixa Express) fica para quando
+houver gateway.
+
+| Método                    | Rota                                                  | Descrição                                                                              |
+| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`                     | `/me/payments`                                        | pagamentos da família                                                                  |
+| `GET`                     | `/me/payments/by-enrollment/:code`                    | pagamento de uma matrícula                                                             |
+| `GET`                     | `/payments/bank-accounts`                             | contas da paróquia ativas                                                              |
+| `POST`                    | `/me/payments/:id/proof`                              | comprovativo (`multipart`: `bankAccountId`, `file`)                                    |
+| `GET`                     | `/me/payments/:id/proof`                              | abre o comprovativo enviado                                                            |
+| `GET`                     | `/finance/payments`                                   | coordenação + `FINANCE`: pagamentos (`status`, `method`, `purpose`, `search`) e resumo |
+| `GET`                     | `/finance/payments/:id/proof`                         | abre o comprovativo                                                                    |
+| `POST`                    | `/finance/payments/:id/approve` · `/reject` · `/cash` | valida, recusa (com motivo) ou regista numerário                                       |
+| `GET`                     | `/finance/settings`                                   | preços e contas                                                                        |
+| `PUT`                     | `/finance/prices/:purpose`                            | preço da matrícula ou da confirmação                                                   |
+| `POST` · `PUT` · `DELETE` | `/finance/bank-accounts(/:id)`                        | contas da paróquia                                                                     |
+
+### Ficheiros (UploadThing)
+
+Documentos e comprovativos vão para o UploadThing (`STORAGE_PROVIDER=uploadthing`,
+`UPLOADTHING_TOKEN`); em desenvolvimento sem conta, `STORAGE_PROVIDER=memory`.
+
+- Só PDF, JPG, PNG ou WEBP, verificados pelo conteúdo (não pelo nome), até
+  `UPLOAD_MAX_BYTES` (5 MB).
+- A base de dados guarda só a chave do ficheiro. O browser nunca recebe o
+  endereço: pede o ficheiro à API, que confirma o acesso e o devolve
+  (`Cache-Control: private, no-store`).
+- No plano gratuito do UploadThing os ficheiros não podem ser privados (ficam
+  com endereço aleatório, que nunca é divulgado). Num plano pago, defina
+  `UPLOADTHING_ACL=private`.
 
 Proteger rotas noutro módulo:
 

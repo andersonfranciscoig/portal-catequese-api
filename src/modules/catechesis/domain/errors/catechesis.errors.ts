@@ -39,7 +39,7 @@ export class EnrollmentAlreadyExistsError extends error(
 export class EnrollmentAlreadyDecidedError extends error(
   "conflict",
   "enrollment_already_decided",
-  "Esta matrícula já foi decidida.",
+  "Esta ação não está disponível no estado atual da matrícula.",
 ) {}
 export class NotAnApplicantError extends error(
   "forbidden",
@@ -77,3 +77,10 @@ export class NotAClassMemberError extends error(
   "Há catequizandos que não pertencem a esta turma.",
 ) {}
 export class InvalidEvaluationError extends error("validation", "invalid_evaluation") {}
+
+export class DocumentNotFoundError extends error(
+  "not_found",
+  "document_not_found",
+  "Documento não encontrado.",
+) {}
+export class ConfirmationNotAllowedError extends error("validation", "confirmation_not_allowed") {}

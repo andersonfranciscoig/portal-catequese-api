@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
+import { EventBus } from "../../shared/application/event-bus.js";
+import { FileStorage, UploadPolicy } from "../../shared/application/file-storage.js";
 import { Notifier } from "../../shared/application/notifier.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
@@ -29,9 +31,21 @@ import {
   ListClassesUseCase,
 } from "./application/use-cases/coordination/class.use-cases.js";
 import {
-  DecideEnrollmentUseCase,
+  EnrollmentActionUseCase,
+  GetEnrollmentDetailUseCase,
   ListEnrollmentsUseCase,
 } from "./application/use-cases/coordination/enrollment.use-cases.js";
+import {
+  ListEnrollmentDocumentsUseCase,
+  ReadEnrollmentDocumentUseCase,
+  UploadEnrollmentDocumentUseCase,
+} from "./application/use-cases/documents/enrollment-documents.use-cases.js";
+import {
+  ConfirmationCandidates,
+  ConfirmEnrollmentUseCase,
+  ListMyConfirmationsUseCase,
+  SearchConfirmationsUseCase,
+} from "./application/use-cases/family/confirmations.use-cases.js";
 import { GetCatechumenProfileUseCase } from "./application/use-cases/family/get-catechumen-profile.use-case.js";
 import { GetFamilyUseCase } from "./application/use-cases/family/get-family.use-case.js";
 import { SubmitEnrollmentUseCase } from "./application/use-cases/family/submit-enrollment.use-case.js";
@@ -40,6 +54,7 @@ import {
   CalendarRepository,
   CatechumenRepository,
   ClassRepository,
+  EnrollmentDocumentRepository,
   EnrollmentRepository,
   EvaluationRepository,
 } from "./domain/repositories/catechesis.repositories.js";
@@ -48,6 +63,7 @@ import {
   PrismaCalendarRepository,
   PrismaCatechumenRepository,
   PrismaClassRepository,
+  PrismaEnrollmentDocumentRepository,
   PrismaEnrollmentRepository,
   PrismaEvaluationRepository,
 } from "./infrastructure/persistence/prisma/prisma-catechesis.repositories.js";
@@ -64,6 +80,8 @@ const EVALUATIONS = EvaluationRepository;
 const AUDIT = ActivityRecorder;
 const PEOPLE = PeopleDirectory;
 const RESOLVER = CatechistClassResolver;
+const DOCUMENTS = EnrollmentDocumentRepository;
+const CANDIDATES = ConfirmationCandidates;
 
 /**
  * Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
@@ -80,6 +98,7 @@ const RESOLVER = CatechistClassResolver;
     { provide: CLASSES, useClass: PrismaClassRepository },
     { provide: ATTENDANCE, useClass: PrismaAttendanceRepository },
     { provide: EVALUATIONS, useClass: PrismaEvaluationRepository },
+    { provide: DOCUMENTS, useClass: PrismaEnrollmentDocumentRepository },
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
     provideUseCase(RESOLVER, [
@@ -110,6 +129,48 @@ const RESOLVER = CatechistClassResolver;
       AUDIT,
       Clock,
       Notifier,
+      EventBus,
+    ]),
+    provideUseCase(UploadEnrollmentDocumentUseCase, [
+      ENROLLMENTS,
+      CATECHUMENS,
+      DOCUMENTS,
+      FileStorage,
+      UploadPolicy,
+      AUDIT,
+      Notifier,
+      Clock,
+    ]),
+    provideUseCase(ListEnrollmentDocumentsUseCase, [ENROLLMENTS, CATECHUMENS, DOCUMENTS]),
+    provideUseCase(ReadEnrollmentDocumentUseCase, [
+      ENROLLMENTS,
+      CATECHUMENS,
+      DOCUMENTS,
+      FileStorage,
+    ]),
+    provideUseCase(CANDIDATES, [
+      CATECHUMENS,
+      ENROLLMENTS,
+      CLASSES,
+      EVALUATIONS,
+      ATTENDANCE,
+      CALENDAR,
+      PEOPLE,
+      Clock,
+    ]),
+    provideUseCase(ListMyConfirmationsUseCase, [CATECHUMENS, CANDIDATES]),
+    provideUseCase(SearchConfirmationsUseCase, [ENROLLMENTS, CATECHUMENS, CALENDAR, CANDIDATES]),
+    provideUseCase(ConfirmEnrollmentUseCase, [
+      CATECHUMENS,
+      ENROLLMENTS,
+      CANDIDATES,
+      CatechesisAccess,
+      EnrollmentCodes,
+      CALENDAR,
+      EventBus,
+      AUDIT,
+      Notifier,
+      Clock,
     ]),
     // Catequista
     provideUseCase(GetMyClassUseCase, [RESOLVER, ATTENDANCE, PEOPLE]),
@@ -132,8 +193,15 @@ const RESOLVER = CatechistClassResolver;
       Clock,
       Notifier,
     ]),
-    provideUseCase(ListEnrollmentsUseCase, [ENROLLMENTS, CATECHUMENS, CALENDAR]),
-    provideUseCase(DecideEnrollmentUseCase, [
+    provideUseCase(ListEnrollmentsUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, CALENDAR, PEOPLE]),
+    provideUseCase(GetEnrollmentDetailUseCase, [
+      ENROLLMENTS,
+      CATECHUMENS,
+      CLASSES,
+      DOCUMENTS,
+      PEOPLE,
+    ]),
+    provideUseCase(EnrollmentActionUseCase, [
       ENROLLMENTS,
       CLASSES,
       CATECHUMENS,

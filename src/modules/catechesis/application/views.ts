@@ -59,6 +59,10 @@ export interface EnrollmentView {
   previousParish?: string;
   submittedAt: string;
   classId?: string;
+  /** Motivo da recusa ou documentos em falta (o que a coordenação escreveu). */
+  reviewNote?: string;
+  /** A família entrega os documentos em papel na secretaria. */
+  documentsInPerson: boolean;
 }
 
 export interface CatechumenCardView {
@@ -160,6 +164,8 @@ export function toEnrollmentView(enrollment: Enrollment, catechumenName: string)
     previousParish: enrollment.previousParish,
     submittedAt: enrollment.submittedAt.toISOString(),
     classId: enrollment.classId,
+    reviewNote: enrollment.reviewNote,
+    documentsInPerson: enrollment.documentsInPerson,
   };
 }
 

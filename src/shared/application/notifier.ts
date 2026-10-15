@@ -1,5 +1,5 @@
 /** Grupos que recebem uma notificação por terem uma permissão (o super admin tem todas). */
-export type NotifiedPermission = "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS";
+export type NotifiedPermission = "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS" | "FINANCE";
 
 export type NotificationAudience = { accountIds: string[] } | { permission: NotifiedPermission };
 

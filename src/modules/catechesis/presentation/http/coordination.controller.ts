@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -14,6 +15,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 
 import { ApiZodBody, ApiZodQuery } from "../../../../shared/presentation/http/api-zod.js";
+import { fileResponse } from "../../../../shared/presentation/http/uploaded-file.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import {
   AuthGuard,
@@ -33,19 +35,28 @@ import {
   ListClassesUseCase,
 } from "../../application/use-cases/coordination/class.use-cases.js";
 import {
-  DecideEnrollmentUseCase,
+  EnrollmentActionUseCase,
+  GetEnrollmentDetailUseCase,
   ListEnrollmentsUseCase,
 } from "../../application/use-cases/coordination/enrollment.use-cases.js";
+import { ReadEnrollmentDocumentUseCase } from "../../application/use-cases/documents/enrollment-documents.use-cases.js";
+import {
+  ConfirmEnrollmentUseCase,
+  SearchConfirmationsUseCase,
+} from "../../application/use-cases/family/confirmations.use-cases.js";
 import {
   calendarSchema,
   classCatechistsSchema,
+  confirmationSearchSchema,
+  confirmSchema,
   createClassSchema,
-  enrollmentDecisionSchema,
+  enrollmentActionSchema,
   enrollmentListSchema,
   type CalendarBody,
   type ClassCatechistsBody,
+  type ConfirmBody,
   type CreateClassBody,
-  type EnrollmentDecisionBody,
+  type EnrollmentActionBody,
   type EnrollmentListQuery,
 } from "./catechesis.schemas.js";
 
@@ -63,7 +74,11 @@ export class CoordinationController {
     private readonly createClass: CreateClassUseCase,
     private readonly assignCatechists: AssignCatechistsUseCase,
     private readonly listEnrollments: ListEnrollmentsUseCase,
-    private readonly decideEnrollment: DecideEnrollmentUseCase,
+    private readonly enrollmentDetail: GetEnrollmentDetailUseCase,
+    private readonly enrollmentAction: EnrollmentActionUseCase,
+    private readonly readDocument: ReadEnrollmentDocumentUseCase,
+    private readonly searchConfirmations: SearchConfirmationsUseCase,
+    private readonly confirm: ConfirmEnrollmentUseCase,
   ) {}
 
   @Get("calendar")
@@ -117,16 +132,53 @@ export class CoordinationController {
     return this.listEnrollments.execute(query);
   }
 
-  @Post("enrollments/:id/decision")
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Confirma a matrícula numa turma ou recusa-a" })
+  @Get("enrollments/:id")
+  @ApiOperation({ summary: "Detalhe de uma matrícula" })
   @ApiParam({ name: "id", format: "uuid" })
-  @ApiZodBody(enrollmentDecisionSchema)
-  decide(
+  detail(@Param("id", ParseUUIDPipe) id: string) {
+    return this.enrollmentDetail.execute({ enrollmentId: id });
+  }
+
+  @Post("enrollments/:id/actions")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Aprova, pede documentos, confirma numa turma, recusa, lista de espera ou reabre",
+  })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiZodBody(enrollmentActionSchema)
+  act(
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("id", ParseUUIDPipe) id: string,
-    @Body(new ZodValidationPipe(enrollmentDecisionSchema)) body: EnrollmentDecisionBody,
+    @Body(new ZodValidationPipe(enrollmentActionSchema)) action: EnrollmentActionBody,
   ) {
-    return this.decideEnrollment.execute({ ...body, actorId: actor.accountId, enrollmentId: id });
+    return this.enrollmentAction.execute({ actorId: actor.accountId, enrollmentId: id, action });
+  }
+
+  @Get("enrollments/:id/documents/:documentId/file")
+  @Header("Cache-Control", "private, no-store")
+  @Header("X-Content-Type-Options", "nosniff")
+  @ApiOperation({ summary: "Abre um documento da matrícula" })
+  async documentFile(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("documentId", ParseUUIDPipe) documentId: string,
+  ) {
+    return fileResponse(await this.readDocument.execute({ enrollmentId: id, documentId }));
+  }
+
+  @Get("confirmations")
+  @ApiOperation({ summary: "Procura matrículas do ano anterior para confirmar" })
+  @ApiZodQuery(confirmationSearchSchema)
+  confirmations(@Query(new ZodValidationPipe(confirmationSearchSchema)) query: { search: string }) {
+    return this.searchConfirmations.execute(query);
+  }
+
+  @Post("confirmations")
+  @ApiOperation({ summary: "Confirma a matrícula em nome da família" })
+  @ApiZodBody(confirmSchema)
+  confirmForFamily(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Body(new ZodValidationPipe(confirmSchema)) body: ConfirmBody,
+  ) {
+    return this.confirm.execute({ ...body, actorId: actor.accountId, assisted: true });
   }
 }

@@ -5,6 +5,7 @@ import type { CatechesisClass } from "../catechesis-class.js";
 import type { Catechumen } from "../catechumen.js";
 import type { AttendanceEntry, ClassAttendance } from "../class-attendance.js";
 import type { Enrollment } from "../enrollment.js";
+import type { EnrollmentDocument } from "../enrollment-document.js";
 import type { Evaluation } from "../evaluation.js";
 
 /*
@@ -71,4 +72,14 @@ export abstract class AttendanceRepository {
 export abstract class EvaluationRepository {
   abstract listForClass(classId: string): Promise<Evaluation[]>;
   abstract saveMany(evaluations: Evaluation[]): Promise<void>;
+}
+
+export abstract class EnrollmentDocumentRepository {
+  abstract findById(id: UniqueId): Promise<EnrollmentDocument | null>;
+  abstract listForEnrollment(enrollmentId: string): Promise<EnrollmentDocument[]>;
+  /**
+   * Guarda o documento; se já havia um do mesmo tipo, substitui-o e devolve o
+   * anterior (para apagar o ficheiro antigo).
+   */
+  abstract save(document: EnrollmentDocument): Promise<EnrollmentDocument | null>;
 }

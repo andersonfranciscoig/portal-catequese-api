@@ -4,7 +4,6 @@ import {
   AttendanceStatus,
   CatechesisLevel,
   ClassCatechistRole,
-  EnrollmentStatus,
   EnrollmentType,
   Gender,
   GuardianRelationship,
@@ -38,6 +37,7 @@ export const submitEnrollmentSchema = z.object({
     previousParish: optionalText(120),
     notes: optionalText(1000),
   }),
+  documentsInPerson: z.boolean().optional(),
 });
 export type SubmitEnrollmentBody = z.infer<typeof submitEnrollmentSchema>;
 
@@ -92,11 +92,45 @@ export const classCatechistsSchema = z.object({
 });
 export type ClassCatechistsBody = z.infer<typeof classCatechistsSchema>;
 
-export const enrollmentListSchema = z.object({ status: z.enum(EnrollmentStatus).optional() });
+export const enrollmentListSchema = z.object({
+  tab: z
+    .enum([
+      "todas",
+      "em-analise",
+      "aprovadas",
+      "pendentes",
+      "confirmadas",
+      "rejeitadas",
+      "lista-de-espera",
+    ])
+    .default("todas"),
+  search: z.string().max(100).optional(),
+  stage: z.enum(["BAPTISM", "COMMUNION", "BIBLICAL", "CONFIRMATION"]).optional(),
+  type: z.enum(EnrollmentType).optional(),
+  sort: z.enum(["recentes", "antigas", "nome"]).default("recentes"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
 export type EnrollmentListQuery = z.infer<typeof enrollmentListSchema>;
 
-export const enrollmentDecisionSchema = z.discriminatedUnion("decision", [
-  z.object({ decision: z.literal("CONFIRMED"), classId: z.uuid() }),
-  z.object({ decision: z.literal("REJECTED") }),
+export const enrollmentActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("approve") }),
+  z.object({ kind: z.literal("request-documents"), note: optionalText(500) }),
+  z.object({ kind: z.literal("confirm"), classId: z.uuid() }),
+  z.object({ kind: z.literal("reject"), reason: optionalText(500) }),
+  z.object({ kind: z.literal("waitlist") }),
+  z.object({ kind: z.literal("reopen") }),
 ]);
-export type EnrollmentDecisionBody = z.infer<typeof enrollmentDecisionSchema>;
+export type EnrollmentActionBody = z.infer<typeof enrollmentActionSchema>;
+
+/* Documentos e confirmações */
+
+export const documentKindSchema = z.object({ kind: z.enum(["ID", "BAPTISM", "PHOTO"]) });
+
+export const confirmSchema = z.object({
+  previousEnrollmentId: z.uuid(),
+  preferredSlot: z.enum(SessionSlot),
+});
+export type ConfirmBody = z.infer<typeof confirmSchema>;
+
+export const confirmationSearchSchema = z.object({ search: z.string().max(100).default("") });

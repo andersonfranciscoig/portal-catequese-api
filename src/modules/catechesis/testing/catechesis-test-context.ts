@@ -1,3 +1,6 @@
+import { UploadPolicy } from "../../../shared/application/file-storage.js";
+import { MemoryFileStorage } from "../../../shared/infrastructure/storage/memory-file-storage.js";
+import { RecordingEventBus } from "../../../shared/testing/recording-event-bus.js";
 import { RecordingNotifier } from "../../../shared/testing/recording-notifier.js";
 import {
   PeopleDirectory,
@@ -28,9 +31,21 @@ import {
   ListClassesUseCase,
 } from "../application/use-cases/coordination/class.use-cases.js";
 import {
-  DecideEnrollmentUseCase,
+  EnrollmentActionUseCase,
+  GetEnrollmentDetailUseCase,
   ListEnrollmentsUseCase,
 } from "../application/use-cases/coordination/enrollment.use-cases.js";
+import {
+  ListEnrollmentDocumentsUseCase,
+  ReadEnrollmentDocumentUseCase,
+  UploadEnrollmentDocumentUseCase,
+} from "../application/use-cases/documents/enrollment-documents.use-cases.js";
+import {
+  ConfirmationCandidates,
+  ConfirmEnrollmentUseCase,
+  ListMyConfirmationsUseCase,
+  SearchConfirmationsUseCase,
+} from "../application/use-cases/family/confirmations.use-cases.js";
 import { GetCatechumenProfileUseCase } from "../application/use-cases/family/get-catechumen-profile.use-case.js";
 import { GetFamilyUseCase } from "../application/use-cases/family/get-family.use-case.js";
 import {
@@ -42,6 +57,7 @@ import {
   InMemoryCalendarRepository,
   InMemoryCatechumenRepository,
   InMemoryClassRepository,
+  InMemoryEnrollmentDocumentRepository,
   InMemoryEnrollmentRepository,
   InMemoryEvaluationRepository,
 } from "../infrastructure/persistence/in-memory/in-memory-catechesis.repositories.js";
@@ -95,11 +111,25 @@ export function createCatechesisTestContext() {
   const people = new FakePeopleDirectory();
   const activity = new RecordingActivity();
   const notifier = new RecordingNotifier();
+  const events = new RecordingEventBus();
+  const documents = new InMemoryEnrollmentDocumentRepository();
+  const storage = new MemoryFileStorage();
+  const policy = new UploadPolicy(1024 * 1024);
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   let next = 0;
   const codes = new EnrollmentCodes(enrollments, () => 48_200 + next++);
   const access = new CatechesisAccess(people);
+  const candidates = new ConfirmationCandidates(
+    catechumens,
+    enrollments,
+    classes,
+    evaluations,
+    attendance,
+    calendars,
+    people,
+    clock,
+  );
   const resolver = new CatechistClassResolver(
     access,
     calendars,
@@ -128,6 +158,9 @@ export function createCatechesisTestContext() {
   people.add({ id: IDS.stranger, fullName: "Rosa Afonso" });
 
   const ctx = {
+    events,
+    documents,
+    storage,
     calendars,
     catechumens,
     enrollments,
@@ -159,6 +192,7 @@ export function createCatechesisTestContext() {
       activity,
       clock,
       notifier,
+      events,
     ),
     myClass: new GetMyClassUseCase(resolver, attendance, people),
     roll: new GetRollUseCase(resolver, attendance),
@@ -177,15 +211,62 @@ export function createCatechesisTestContext() {
       clock,
       notifier,
     ),
-    listEnrollments: new ListEnrollmentsUseCase(enrollments, catechumens, calendars),
-    decide: new DecideEnrollmentUseCase(
+    listEnrollments: new ListEnrollmentsUseCase(
       enrollments,
-      classes,
       catechumens,
-      activity,
-      clock,
-      notifier,
+      classes,
+      calendars,
+      people,
     ),
+    detail: new GetEnrollmentDetailUseCase(enrollments, catechumens, classes, documents, people),
+    act: new EnrollmentActionUseCase(enrollments, classes, catechumens, activity, clock, notifier),
+    upload: new UploadEnrollmentDocumentUseCase(
+      enrollments,
+      catechumens,
+      documents,
+      storage,
+      policy,
+      activity,
+      notifier,
+      clock,
+    ),
+    listDocuments: new ListEnrollmentDocumentsUseCase(enrollments, catechumens, documents),
+    readDocument: new ReadEnrollmentDocumentUseCase(enrollments, catechumens, documents, storage),
+    confirmations: new ListMyConfirmationsUseCase(catechumens, candidates),
+    searchConfirmations: new SearchConfirmationsUseCase(
+      enrollments,
+      catechumens,
+      calendars,
+      candidates,
+    ),
+    confirm: new ConfirmEnrollmentUseCase(
+      catechumens,
+      enrollments,
+      candidates,
+      access,
+      codes,
+      calendars,
+      events,
+      activity,
+      notifier,
+      clock,
+    ),
+
+    /** Atalho dos testes: confirmar numa turma ou recusar. */
+    decide(
+      input: { actorId: string; enrollmentId: string } & (
+        { decision: "CONFIRMED"; classId: string } | { decision: "REJECTED" }
+      ),
+    ) {
+      return ctx.act.execute({
+        actorId: input.actorId,
+        enrollmentId: input.enrollmentId,
+        action:
+          input.decision === "CONFIRMED"
+            ? { kind: "confirm", classId: input.classId }
+            : { kind: "reject" },
+      });
+    },
 
     /** O ano 2026/2027 (catequese de 26 de setembro a 3 de julho). */
     async defineYear() {

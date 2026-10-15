@@ -1,3 +1,5 @@
+import type { NotifiedPermission } from "./notifier.js";
+
 /** O que os outros módulos sabem de uma conta (sem dados sensíveis). */
 export interface PersonSnapshot {
   id: string;
@@ -21,7 +23,5 @@ export abstract class PeopleDirectory {
   /** As que existirem, pela mesma ordem (ids desconhecidos ficam de fora). */
   abstract findMany(ids: string[]): Promise<PersonSnapshot[]>;
   /** Contas ativas que têm a permissão em vigor (o super admin tem todas). */
-  abstract idsWithPermission(
-    permission: "SUPER_ADMIN" | "COORDINATION" | "APPROVE_CATECHISTS",
-  ): Promise<string[]>;
+  abstract idsWithPermission(permission: NotifiedPermission): Promise<string[]>;
 }

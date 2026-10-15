@@ -249,7 +249,7 @@ describe("Coordenação: turmas e confirmação", () => {
       capacity: 20,
     });
     await expect(
-      ctx.decide.execute({
+      ctx.decide({
         actorId: IDS.coordinator,
         enrollmentId: enrollment.id,
         decision: "CONFIRMED",
@@ -257,7 +257,7 @@ describe("Coordenação: turmas e confirmação", () => {
       }),
     ).rejects.toThrow(InvalidEnrollmentError);
 
-    const confirmed = await ctx.decide.execute({
+    const confirmed = await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: enrollment.id,
       decision: "CONFIRMED",
@@ -265,7 +265,7 @@ describe("Coordenação: turmas e confirmação", () => {
     });
     expect(confirmed).toMatchObject({ status: "CONFIRMED", classId: klass.id });
     await expect(
-      ctx.decide.execute({
+      ctx.decide({
         actorId: IDS.coordinator,
         enrollmentId: enrollment.id,
         decision: "REJECTED",
@@ -279,21 +279,30 @@ describe("Coordenação: turmas e confirmação", () => {
       catechists: [{ fullName: "Maria José" }],
       nextSessionDate: "2026-10-17",
     });
-    expect(await ctx.listEnrollments.execute({ status: "CONFIRMED" })).toHaveLength(1);
+    expect(
+      (
+        await ctx.listEnrollments.execute({
+          tab: "confirmadas",
+          sort: "recentes",
+          page: 1,
+          pageSize: 20,
+        })
+      ).items,
+    ).toHaveLength(1);
   });
 
   it("não passa da lotação da turma", async () => {
     const klass = await ctx.classWithCatechist(IDS.catechist, 1);
     const first = await ctx.enrollChild();
     const second = await ctx.enrollChild({ fullName: "Rui Francisco", birthDate: "2016-01-01" });
-    await ctx.decide.execute({
+    await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: first.id,
       decision: "CONFIRMED",
       classId: klass.id,
     });
     await expect(
-      ctx.decide.execute({
+      ctx.decide({
         actorId: IDS.coordinator,
         enrollmentId: second.id,
         decision: "CONFIRMED",
@@ -314,7 +323,7 @@ describe("Portal do catequista", () => {
       { fullName: "Rui Francisco", birthDate: "2016-01-01" },
     ]) {
       const enrollment = await ctx.enrollChild(child);
-      await ctx.decide.execute({
+      await ctx.decide({
         actorId: IDS.coordinator,
         enrollmentId: enrollment.id,
         decision: "CONFIRMED",
@@ -447,7 +456,7 @@ describe("Notificações da catequese", () => {
     });
 
     const klass = await ctx.classWithCatechist();
-    await ctx.decide.execute({
+    await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: enrollment.id,
       decision: "CONFIRMED",
@@ -461,7 +470,7 @@ describe("Notificações da catequese", () => {
     });
 
     const other = await ctx.enrollChild({ fullName: "Rui Francisco", birthDate: "2016-01-01" });
-    await ctx.decide.execute({
+    await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: other.id,
       decision: "REJECTED",
@@ -483,7 +492,7 @@ describe("Notificações da catequese", () => {
       },
       catechesis: { type: "NEW", level: "CONFIRMATION_1", preferredSlot: "SATURDAY_AFTERNOON" },
     });
-    await ctx.decide.execute({
+    await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: enrollment.id,
       decision: "REJECTED",
@@ -515,7 +524,7 @@ describe("Notificações da catequese", () => {
   it("a falta avisa o encarregado uma só vez", async () => {
     const klass = await ctx.classWithCatechist();
     const enrollment = await ctx.enrollChild();
-    await ctx.decide.execute({
+    await ctx.decide({
       actorId: IDS.coordinator,
       enrollmentId: enrollment.id,
       decision: "CONFIRMED",

@@ -4,12 +4,14 @@ import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import type { Catechumen } from "../../../domain/catechumen.js";
 import type { ClassAttendance } from "../../../domain/class-attendance.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
+import type { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
 import {
   AttendanceRepository,
   CalendarRepository,
   CatechumenRepository,
   ClassRepository,
+  EnrollmentDocumentRepository,
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
@@ -139,5 +141,24 @@ export class InMemoryEvaluationRepository extends EvaluationRepository {
     for (const item of evaluations) {
       this.items.set(`${item.classId}|${item.catechumenId}`, structuredClone(item));
     }
+  }
+}
+
+export class InMemoryEnrollmentDocumentRepository extends EnrollmentDocumentRepository {
+  readonly items = new Map<string, EnrollmentDocument>();
+  async findById(id: UniqueId) {
+    return this.items.get(id.value) ?? null;
+  }
+  async listForEnrollment(enrollmentId: string) {
+    return [...this.items.values()].filter((item) => item.enrollmentId === enrollmentId);
+  }
+  async save(document: EnrollmentDocument) {
+    const previous =
+      [...this.items.values()].find(
+        (item) => item.enrollmentId === document.enrollmentId && item.kind === document.kind,
+      ) ?? null;
+    if (previous) this.items.delete(previous.id.value);
+    this.items.set(document.id.value, document);
+    return previous;
   }
 }

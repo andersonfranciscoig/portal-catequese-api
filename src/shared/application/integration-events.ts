@@ -13,3 +13,19 @@ export interface AccessRequestApprovedEvent extends DomainEvent {
   readonly phone: string;
   readonly email?: string;
 }
+
+export const ENROLLMENT_SUBMITTED = "catechesis.enrollment_submitted";
+
+/**
+ * Uma matrícula nova ou a confirmação de um ano foi submetida. O módulo dos
+ * pagamentos subscreve-o para criar a taxa a pagar.
+ */
+export interface EnrollmentSubmittedEvent extends DomainEvent {
+  readonly name: typeof ENROLLMENT_SUBMITTED;
+  readonly enrollmentCode: string;
+  readonly catechumenName: string;
+  /** Matrícula nova ou confirmação (preços diferentes). */
+  readonly purpose: "ENROLLMENT" | "CONFIRMATION";
+  /** Quem paga e acompanha: o encarregado e/ou o próprio adulto. */
+  readonly payerAccountIds: string[];
+}

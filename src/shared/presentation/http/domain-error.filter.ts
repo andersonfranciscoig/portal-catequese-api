@@ -9,6 +9,7 @@ const STATUS: Record<DomainErrorKind, HttpStatus> = {
   unauthorized: HttpStatus.UNAUTHORIZED,
   forbidden: HttpStatus.FORBIDDEN,
   not_found: HttpStatus.NOT_FOUND,
+  unavailable: HttpStatus.SERVICE_UNAVAILABLE,
 };
 
 /** Traduz os erros de domínio para HTTP. O domínio não sabe o que é HTTP. */

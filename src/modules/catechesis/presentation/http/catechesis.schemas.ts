@@ -134,3 +134,65 @@ export const confirmSchema = z.object({
 export type ConfirmBody = z.infer<typeof confirmSchema>;
 
 export const confirmationSearchSchema = z.object({ search: z.string().max(100).default("") });
+
+/* Gestão da coordenação */
+
+export const deadlinePurposeParam = z.enum(["ENROLLMENT", "CONFIRMATION"]);
+
+export const deadlineSchema = z.object({
+  window: z.object({ startsOn: isoDate, endsOn: isoDate }).nullable(),
+});
+export type DeadlineBody = z.infer<typeof deadlineSchema>;
+
+export const classListSchema = z.object({
+  year: z
+    .string()
+    .regex(/^\d{4}\/\d{4}$/)
+    .optional(),
+});
+
+export const planClassesSchema = z.object({
+  level: z.enum(CatechesisLevel),
+  capacity: z.coerce.number().int().min(5).max(100),
+});
+export type PlanClassesQuery = z.infer<typeof planClassesSchema>;
+
+export const generateClassesSchema = z.object({
+  level: z.enum(CatechesisLevel),
+  capacity: z.number().int().min(5).max(100),
+  slot: z.enum(SessionSlot),
+});
+export type GenerateClassesBody = z.infer<typeof generateClassesSchema>;
+
+export const catechistListSchema = z.object({
+  tab: z
+    .enum(["todos", "ativos", "disponiveis", "em-formacao", "indisponiveis", "inativos"])
+    .default("todos"),
+  search: z.string().max(100).default(""),
+});
+export type CatechistListQuery = z.infer<typeof catechistListSchema>;
+
+export const catechistStatusSchema = z.object({
+  status: z.enum(["IN_TRAINING", "UNAVAILABLE", "INACTIVE"]).nullable(),
+});
+
+export const presenceSchema = z.object({ status: z.enum(AttendanceStatus) });
+
+export const catechumenListSchema = z.object({
+  search: z.string().max(100).optional(),
+  stage: z.enum(["BAPTISM", "COMMUNION", "BIBLICAL", "CONFIRMATION"]).optional(),
+  status: z
+    .enum([
+      "SUBMITTED",
+      "UNDER_REVIEW",
+      "APPROVED",
+      "PENDING_CONFIRMATION",
+      "CONFIRMED",
+      "REJECTED",
+      "WAITLIST",
+    ])
+    .optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type CatechumenListQuery = z.infer<typeof catechumenListSchema>;

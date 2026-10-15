@@ -12,6 +12,7 @@ import type {
 import { PrismaService } from "../../../../../shared/infrastructure/database/prisma.service.js";
 import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
+import type { CatechistPresence, CatechistProfile } from "../../../domain/catechist-records.js";
 import { Catechumen } from "../../../domain/catechumen.js";
 import type { ClassAttendance } from "../../../domain/class-attendance.js";
 import type { AllowedContentType } from "../../../../../shared/application/file-storage.js";
@@ -22,6 +23,8 @@ import type { Evaluation } from "../../../domain/evaluation.js";
 import {
   AttendanceRepository,
   CalendarRepository,
+  CatechistPresenceRepository,
+  CatechistProfileRepository,
   CatechumenRepository,
   ClassRepository,
   EnrollmentDocumentRepository,
@@ -51,6 +54,19 @@ export class PrismaCalendarRepository extends CalendarRepository {
           endsOn: row.endsOn,
           updatedAt: row.updatedAt,
           updatedBy: orUndefined(row.updatedBy),
+          windows: {
+            ...(row.enrollmentStartsOn && row.enrollmentEndsOn
+              ? { ENROLLMENT: { startsOn: row.enrollmentStartsOn, endsOn: row.enrollmentEndsOn } }
+              : {}),
+            ...(row.confirmationStartsOn && row.confirmationEndsOn
+              ? {
+                  CONFIRMATION: {
+                    startsOn: row.confirmationStartsOn,
+                    endsOn: row.confirmationEndsOn,
+                  },
+                }
+              : {}),
+          },
         })
       : null;
   }
@@ -62,6 +78,10 @@ export class PrismaCalendarRepository extends CalendarRepository {
       endsOn: calendar.endsOn,
       updatedAt: calendar.updatedAt,
       updatedBy: calendar.updatedBy ?? null,
+      enrollmentStartsOn: calendar.windows.ENROLLMENT?.startsOn ?? null,
+      enrollmentEndsOn: calendar.windows.ENROLLMENT?.endsOn ?? null,
+      confirmationStartsOn: calendar.windows.CONFIRMATION?.startsOn ?? null,
+      confirmationEndsOn: calendar.windows.CONFIRMATION?.endsOn ?? null,
     };
     await this.prisma.catecheticalCalendar.upsert({
       where: { id: CALENDAR_ID },
@@ -239,6 +259,11 @@ export class PrismaEnrollmentRepository extends EnrollmentRepository {
     return this.prisma.enrollment.count({ where: { classId, status: "CONFIRMED" } });
   }
 
+  async findByCode(code: string) {
+    const row = await this.prisma.enrollment.findUnique({ where: { code } });
+    return row ? toEnrollment(row) : null;
+  }
+
   async codeExists(code: string) {
     return (await this.prisma.enrollment.count({ where: { code } })) > 0;
   }
@@ -325,6 +350,25 @@ export class PrismaClassRepository extends ClassRepository {
       orderBy: [{ level: "asc" }, { section: "asc" }],
     });
     return rows.map(toClass);
+  }
+
+  async listForCatechist(accountId: string) {
+    if (!UUID.test(accountId)) return [];
+    const rows = await this.prisma.catechesisClass.findMany({
+      where: { catechists: { some: { accountId } } },
+      include: withCatechists,
+      orderBy: { catecheticalYear: "desc" },
+    });
+    return rows.map(toClass);
+  }
+
+  async listYears() {
+    const rows = await this.prisma.catechesisClass.findMany({
+      distinct: ["catecheticalYear"],
+      select: { catecheticalYear: true },
+      orderBy: { catecheticalYear: "desc" },
+    });
+    return rows.map((row) => row.catecheticalYear);
   }
 
   async findForCatechist(accountId: string, catecheticalYear: string) {
@@ -537,6 +581,80 @@ export class PrismaEnrollmentDocumentRepository extends EnrollmentDocumentReposi
         },
       });
       return previous ? toDocument(previous) : null;
+    });
+  }
+}
+
+@Injectable()
+export class PrismaCatechistProfileRepository extends CatechistProfileRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async list() {
+    return (await this.prisma.catechistProfile.findMany()).map(toProfile);
+  }
+
+  async find(accountId: string) {
+    if (!UUID.test(accountId)) return null;
+    const row = await this.prisma.catechistProfile.findUnique({ where: { accountId } });
+    return row ? toProfile(row) : null;
+  }
+
+  async save(profile: CatechistProfile) {
+    const data = {
+      status: profile.status ?? null,
+      updatedAt: profile.updatedAt,
+      updatedBy: profile.updatedBy ?? null,
+    };
+    await this.prisma.catechistProfile.upsert({
+      where: { accountId: profile.accountId },
+      create: { accountId: profile.accountId, ...data },
+      update: data,
+    });
+  }
+}
+
+function toProfile(row: {
+  accountId: string;
+  status: CatechistProfile["status"] | null;
+  updatedAt: Date;
+  updatedBy: string | null;
+}): CatechistProfile {
+  return {
+    accountId: row.accountId,
+    status: orUndefined(row.status),
+    updatedAt: row.updatedAt,
+    updatedBy: orUndefined(row.updatedBy),
+  };
+}
+
+@Injectable()
+export class PrismaCatechistPresenceRepository extends CatechistPresenceRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listForDate(date: string) {
+    return this.prisma.catechistAttendance.findMany({ where: { date } });
+  }
+
+  async listForClasses(classIds: string[]) {
+    return this.prisma.catechistAttendance.findMany({
+      where: { classId: { in: validIds(classIds) } },
+    });
+  }
+
+  async save(presence: CatechistPresence) {
+    const data = {
+      status: presence.status,
+      recordedBy: presence.recordedBy,
+      recordedAt: presence.recordedAt,
+    };
+    await this.prisma.catechistAttendance.upsert({
+      where: { classId_date: { classId: presence.classId, date: presence.date } },
+      create: { classId: presence.classId, date: presence.date, ...data },
+      update: data,
     });
   }
 }

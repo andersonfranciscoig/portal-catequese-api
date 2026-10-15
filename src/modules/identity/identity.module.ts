@@ -25,6 +25,7 @@ import { GetAccountStatsUseCase } from "./application/use-cases/admin/get-accoun
 import { GetAccountUseCase } from "./application/use-cases/admin/get-account.use-case.js";
 import { GrantBetaAccessByContactUseCase } from "./application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "./application/use-cases/admin/list-accounts.use-case.js";
+import { ListCatechistApplicationsUseCase } from "./application/use-cases/admin/list-catechist-applications.use-case.js";
 import { SetAccountPermissionsUseCase } from "./application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "./application/use-cases/admin/set-beta-access.use-case.js";
 import { SetAccountRolesUseCase } from "./application/use-cases/admin/set-account-roles.use-case.js";
@@ -46,6 +47,7 @@ import { JwtAccessTokenIssuer } from "./infrastructure/crypto/jwt-access-token.i
 import { PrismaAccountRepository } from "./infrastructure/persistence/prisma/prisma-account.repository.js";
 import { PrismaSessionRepository } from "./infrastructure/persistence/prisma/prisma-session.repository.js";
 import { AdminAccountsController } from "./presentation/http/admin-accounts.controller.js";
+import { CoordinationCatechistsController } from "./presentation/http/coordination-catechists.controller.js";
 import { AuthController } from "./presentation/http/auth.controller.js";
 import { AuthGuard } from "./presentation/http/guards/auth.guard.js";
 import { PermissionsGuard } from "./presentation/http/guards/permissions.guard.js";
@@ -67,7 +69,7 @@ const AUDIT = ActivityRecorder;
       }),
     }),
   ],
-  controllers: [AuthController, AdminAccountsController],
+  controllers: [AuthController, AdminAccountsController, CoordinationCatechistsController],
   providers: [
     { provide: AccountRepository, useClass: PrismaAccountRepository },
     { provide: SessionRepository, useClass: PrismaSessionRepository },
@@ -133,6 +135,7 @@ const AUDIT = ActivityRecorder;
     provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     // Administração
     provideUseCase(ListAccountsUseCase, [AccountRepository]),
+    provideUseCase(ListCatechistApplicationsUseCase, [AccountRepository]),
     provideUseCase(GetAccountUseCase, [AccountRepository]),
     provideUseCase(GetAccountStatsUseCase, [AccountRepository]),
     provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock, Notifier]),

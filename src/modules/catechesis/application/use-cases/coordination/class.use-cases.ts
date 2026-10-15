@@ -33,7 +33,7 @@ async function withMembers(
   return views.map((view, index) => ({ ...view, members: counts[index] }));
 }
 
-/** Turmas do ano em curso. */
+/** Turmas de um ano (por omissão, o em curso). */
 export class ListClassesUseCase {
   constructor(
     private readonly classes: ClassRepository,
@@ -43,10 +43,11 @@ export class ListClassesUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute(): Promise<CoordinationClassView[]> {
+  /** Sem ano, o ano em curso. */
+  async execute({ year }: { year?: string } = {}): Promise<CoordinationClassView[]> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const classes = await this.classes.listByYear(calendar.label);
+    const classes = await this.classes.listByYear(year ?? calendar.label);
     const views = await toClassViews(classes, this.people, calendar, luandaToday(this.clock.now()));
     return withMembers(views, this.enrollments);
   }

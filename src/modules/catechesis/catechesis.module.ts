@@ -24,6 +24,7 @@ import {
 import {
   GetCalendarUseCase,
   SetCalendarUseCase,
+  SetDeadlineUseCase,
 } from "./application/use-cases/coordination/calendar.use-cases.js";
 import {
   AssignCatechistsUseCase,
@@ -52,6 +53,8 @@ import { SubmitEnrollmentUseCase } from "./application/use-cases/family/submit-e
 import {
   AttendanceRepository,
   CalendarRepository,
+  CatechistPresenceRepository,
+  CatechistProfileRepository,
   CatechumenRepository,
   ClassRepository,
   EnrollmentDocumentRepository,
@@ -61,6 +64,8 @@ import {
 import {
   PrismaAttendanceRepository,
   PrismaCalendarRepository,
+  PrismaCatechistPresenceRepository,
+  PrismaCatechistProfileRepository,
   PrismaCatechumenRepository,
   PrismaClassRepository,
   PrismaEnrollmentDocumentRepository,
@@ -68,6 +73,36 @@ import {
   PrismaEvaluationRepository,
 } from "./infrastructure/persistence/prisma/prisma-catechesis.repositories.js";
 import { CatechistController } from "./presentation/http/catechist.controller.js";
+import { CoordinationManagementController } from "./presentation/http/coordination-management.controller.js";
+import { PublicCatechesisController } from "./presentation/http/public-catechesis.controller.js";
+import { RateLimitGuard } from "../../shared/presentation/http/rate-limit.guard.js";
+import {
+  GetSessionUseCase,
+  ListSessionDaysUseCase,
+  SetCatechistPresenceUseCase,
+} from "./application/use-cases/coordination/attendance.use-cases.js";
+import {
+  CatechistDirectory,
+  GetCatechistProfileUseCase,
+  ListCatechistsUseCase,
+  SetCatechistStatusUseCase,
+} from "./application/use-cases/coordination/catechists.use-cases.js";
+import {
+  GetCatechumenFileUseCase,
+  ListCatechumensUseCase,
+} from "./application/use-cases/coordination/catechumens.use-cases.js";
+import {
+  GetClassDetailUseCase,
+  GetClassResultsUseCase,
+  ListYearsUseCase,
+} from "./application/use-cases/coordination/class-detail.use-cases.js";
+import {
+  ClassGeneration,
+  GenerateClassesUseCase,
+  PlanClassesUseCase,
+} from "./application/use-cases/coordination/class-generation.use-cases.js";
+import { GetOverviewUseCase } from "./application/use-cases/coordination/overview.use-case.js";
+import { TrackEnrollmentUseCase } from "./application/use-cases/public/track-enrollment.use-case.js";
 import { CoordinationController } from "./presentation/http/coordination.controller.js";
 import { FamilyController } from "./presentation/http/family.controller.js";
 
@@ -82,6 +117,8 @@ const PEOPLE = PeopleDirectory;
 const RESOLVER = CatechistClassResolver;
 const DOCUMENTS = EnrollmentDocumentRepository;
 const CANDIDATES = ConfirmationCandidates;
+const PROFILES = CatechistProfileRepository;
+const PRESENCE = CatechistPresenceRepository;
 
 /**
  * Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
@@ -90,7 +127,13 @@ const CANDIDATES = ConfirmationCandidates;
 @Module({
   // A identidade dá os guards (sessão e permissões) e o diretório de pessoas.
   imports: [IdentityModule],
-  controllers: [FamilyController, CatechistController, CoordinationController],
+  controllers: [
+    FamilyController,
+    CatechistController,
+    CoordinationController,
+    CoordinationManagementController,
+    PublicCatechesisController,
+  ],
   providers: [
     { provide: CALENDAR, useClass: PrismaCalendarRepository },
     { provide: CATECHUMENS, useClass: PrismaCatechumenRepository },
@@ -99,6 +142,9 @@ const CANDIDATES = ConfirmationCandidates;
     { provide: ATTENDANCE, useClass: PrismaAttendanceRepository },
     { provide: EVALUATIONS, useClass: PrismaEvaluationRepository },
     { provide: DOCUMENTS, useClass: PrismaEnrollmentDocumentRepository },
+    { provide: PROFILES, useClass: PrismaCatechistProfileRepository },
+    { provide: PRESENCE, useClass: PrismaCatechistPresenceRepository },
+    RateLimitGuard,
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
     provideUseCase(RESOLVER, [
@@ -182,6 +228,75 @@ const CANDIDATES = ConfirmationCandidates;
     // Coordenação
     provideUseCase(GetCalendarUseCase, [CALENDAR]),
     provideUseCase(SetCalendarUseCase, [CALENDAR, AUDIT, Clock]),
+    provideUseCase(SetDeadlineUseCase, [CALENDAR, AUDIT, Clock]),
+    provideUseCase(ListYearsUseCase, [CLASSES, CALENDAR]),
+    provideUseCase(GetClassDetailUseCase, [
+      CLASSES,
+      ENROLLMENTS,
+      CATECHUMENS,
+      ATTENDANCE,
+      CALENDAR,
+      PEOPLE,
+      Clock,
+    ]),
+    provideUseCase(GetClassResultsUseCase, [
+      CLASSES,
+      ENROLLMENTS,
+      CATECHUMENS,
+      ATTENDANCE,
+      EVALUATIONS,
+    ]),
+    provideUseCase(ClassGeneration, [CLASSES, ENROLLMENTS, CALENDAR, PROFILES, PEOPLE]),
+    provideUseCase(PlanClassesUseCase, [ClassGeneration]),
+    provideUseCase(GenerateClassesUseCase, [
+      ClassGeneration,
+      CLASSES,
+      ENROLLMENTS,
+      EnrollmentActionUseCase,
+      AUDIT,
+      Clock,
+    ]),
+    provideUseCase(CatechistDirectory, [
+      PEOPLE,
+      CLASSES,
+      ENROLLMENTS,
+      PROFILES,
+      PRESENCE,
+      CALENDAR,
+    ]),
+    provideUseCase(ListCatechistsUseCase, [CatechistDirectory]),
+    provideUseCase(GetCatechistProfileUseCase, [CatechistDirectory]),
+    provideUseCase(SetCatechistStatusUseCase, [PEOPLE, PROFILES, AUDIT, Clock]),
+    provideUseCase(ListSessionDaysUseCase, [CALENDAR, Clock]),
+    provideUseCase(GetSessionUseCase, [
+      CLASSES,
+      ENROLLMENTS,
+      ATTENDANCE,
+      PRESENCE,
+      CALENDAR,
+      PEOPLE,
+      Clock,
+    ]),
+    provideUseCase(SetCatechistPresenceUseCase, [CLASSES, PRESENCE, CALENDAR, AUDIT, Clock]),
+    provideUseCase(ListCatechumensUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, CALENDAR, PEOPLE]),
+    provideUseCase(GetCatechumenFileUseCase, [
+      CATECHUMENS,
+      ENROLLMENTS,
+      CLASSES,
+      ATTENDANCE,
+      EVALUATIONS,
+      CALENDAR,
+      PEOPLE,
+    ]),
+    provideUseCase(GetOverviewUseCase, [
+      ENROLLMENTS,
+      CATECHUMENS,
+      CLASSES,
+      CALENDAR,
+      PEOPLE,
+      Clock,
+    ]),
+    provideUseCase(TrackEnrollmentUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, PEOPLE]),
     provideUseCase(ListClassesUseCase, [CLASSES, ENROLLMENTS, CALENDAR, PEOPLE, Clock]),
     provideUseCase(CreateClassUseCase, [CLASSES, CALENDAR, PEOPLE, AUDIT, Clock]),
     provideUseCase(AssignCatechistsUseCase, [

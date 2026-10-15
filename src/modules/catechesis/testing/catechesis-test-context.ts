@@ -24,12 +24,40 @@ import {
 import {
   GetCalendarUseCase,
   SetCalendarUseCase,
+  SetDeadlineUseCase,
 } from "../application/use-cases/coordination/calendar.use-cases.js";
 import {
   AssignCatechistsUseCase,
   CreateClassUseCase,
   ListClassesUseCase,
 } from "../application/use-cases/coordination/class.use-cases.js";
+import {
+  GetSessionUseCase,
+  ListSessionDaysUseCase,
+  SetCatechistPresenceUseCase,
+} from "../application/use-cases/coordination/attendance.use-cases.js";
+import {
+  CatechistDirectory,
+  GetCatechistProfileUseCase,
+  ListCatechistsUseCase,
+  SetCatechistStatusUseCase,
+} from "../application/use-cases/coordination/catechists.use-cases.js";
+import {
+  GetCatechumenFileUseCase,
+  ListCatechumensUseCase,
+} from "../application/use-cases/coordination/catechumens.use-cases.js";
+import {
+  GetClassDetailUseCase,
+  GetClassResultsUseCase,
+  ListYearsUseCase,
+} from "../application/use-cases/coordination/class-detail.use-cases.js";
+import {
+  ClassGeneration,
+  GenerateClassesUseCase,
+  PlanClassesUseCase,
+} from "../application/use-cases/coordination/class-generation.use-cases.js";
+import { GetOverviewUseCase } from "../application/use-cases/coordination/overview.use-case.js";
+import { TrackEnrollmentUseCase } from "../application/use-cases/public/track-enrollment.use-case.js";
 import {
   EnrollmentActionUseCase,
   GetEnrollmentDetailUseCase,
@@ -55,6 +83,8 @@ import {
 import {
   InMemoryAttendanceRepository,
   InMemoryCalendarRepository,
+  InMemoryCatechistPresenceRepository,
+  InMemoryCatechistProfileRepository,
   InMemoryCatechumenRepository,
   InMemoryClassRepository,
   InMemoryEnrollmentDocumentRepository,
@@ -67,13 +97,24 @@ export class FakePeopleDirectory extends PeopleDirectory {
   readonly people = new Map<string, PersonSnapshot>();
 
   add(person: Partial<PersonSnapshot> & Pick<PersonSnapshot, "id" | "fullName">) {
+    const roles = person.roles ?? ["GUARDIAN"];
     this.people.set(person.id, {
       phone: "+244923000000",
-      roles: ["GUARDIAN"],
+      roles,
       approvedCatechist: false,
       active: true,
+      createdAt: "2025-09-01T00:00:00.000Z",
+      catechistApproval: roles.includes("CATECHIST")
+        ? person.approvedCatechist
+          ? "APPROVED"
+          : "PENDING"
+        : undefined,
       ...person,
     });
+  }
+
+  async listCatechists() {
+    return [...this.people.values()].filter((person) => person.roles.includes("CATECHIST"));
   }
 
   async find(id: string) {
@@ -115,6 +156,8 @@ export function createCatechesisTestContext() {
   const documents = new InMemoryEnrollmentDocumentRepository();
   const storage = new MemoryFileStorage();
   const policy = new UploadPolicy(1024 * 1024);
+  const profiles = new InMemoryCatechistProfileRepository();
+  const presence = new InMemoryCatechistPresenceRepository();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   let next = 0;
@@ -251,6 +294,77 @@ export function createCatechesisTestContext() {
       notifier,
       clock,
     ),
+
+    setDeadline: new SetDeadlineUseCase(calendars, activity, clock),
+    years: new ListYearsUseCase(classes, calendars),
+    classDetail: new GetClassDetailUseCase(
+      classes,
+      enrollments,
+      catechumens,
+      attendance,
+      calendars,
+      people,
+      clock,
+    ),
+    results: new GetClassResultsUseCase(classes, enrollments, catechumens, attendance, evaluations),
+    overview: new GetOverviewUseCase(enrollments, catechumens, classes, calendars, people, clock),
+    track: new TrackEnrollmentUseCase(enrollments, catechumens, classes, people),
+    sessionDays: new ListSessionDaysUseCase(calendars, clock),
+    session: new GetSessionUseCase(
+      classes,
+      enrollments,
+      attendance,
+      presence,
+      calendars,
+      people,
+      clock,
+    ),
+    setPresence: new SetCatechistPresenceUseCase(classes, presence, calendars, activity, clock),
+    listCatechumens: new ListCatechumensUseCase(
+      enrollments,
+      catechumens,
+      classes,
+      calendars,
+      people,
+    ),
+    catechumenFile: new GetCatechumenFileUseCase(
+      catechumens,
+      enrollments,
+      classes,
+      attendance,
+      evaluations,
+      calendars,
+      people,
+    ),
+    setCatechistStatus: new SetCatechistStatusUseCase(people, profiles, activity, clock),
+    get catechists() {
+      const directory = new CatechistDirectory(
+        people,
+        classes,
+        enrollments,
+        profiles,
+        presence,
+        calendars,
+      );
+      return {
+        list: new ListCatechistsUseCase(directory),
+        profile: new GetCatechistProfileUseCase(directory),
+      };
+    },
+    get generation() {
+      const generation = new ClassGeneration(classes, enrollments, calendars, profiles, people);
+      return {
+        plan: new PlanClassesUseCase(generation),
+        generate: new GenerateClassesUseCase(
+          generation,
+          classes,
+          enrollments,
+          ctx.act,
+          activity,
+          clock,
+        ),
+      };
+    },
 
     /** Atalho dos testes: confirmar numa turma ou recusar. */
     decide(

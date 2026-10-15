@@ -16,6 +16,7 @@ import { GetAccountStatsUseCase } from "../application/use-cases/admin/get-accou
 import { GetAccountUseCase } from "../application/use-cases/admin/get-account.use-case.js";
 import { GrantBetaAccessByContactUseCase } from "../application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "../application/use-cases/admin/list-accounts.use-case.js";
+import { ListCatechistApplicationsUseCase } from "../application/use-cases/admin/list-catechist-applications.use-case.js";
 import { SetAccountPermissionsUseCase } from "../application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "../application/use-cases/admin/set-beta-access.use-case.js";
 import { SetAccountRolesUseCase } from "../application/use-cases/admin/set-account-roles.use-case.js";
@@ -113,6 +114,7 @@ export function createIdentityTestContext() {
     setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock, notifier),
     block: new BlockAccountUseCase(accounts, sessions, activity, clock),
     unblock: new UnblockAccountUseCase(accounts, activity, clock, notifier),
+    catechistApplications: new ListCatechistApplicationsUseCase(accounts),
     decideCatechist: new DecideCatechistUseCase(accounts, activity, clock, notifier),
     setBetaAccess: new SetBetaAccessUseCase(accounts, activity, clock),
     grantBetaByContact: new GrantBetaAccessByContactUseCase(accounts, clock),

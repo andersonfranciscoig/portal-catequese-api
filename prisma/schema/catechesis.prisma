@@ -88,12 +88,17 @@ enum YearOutcome {
 
 /// Ano catequético em curso (datas definidas pela coordenação).
 model CatecheticalCalendar {
-  id        String   @id
-  label     String
-  startsOn  String   @map("starts_on")
-  endsOn    String   @map("ends_on")
-  updatedAt DateTime @map("updated_at") @db.Timestamptz(3)
-  updatedBy String?  @map("updated_by") @db.Uuid
+  id                   String   @id
+  label                String
+  startsOn             String   @map("starts_on")
+  endsOn               String   @map("ends_on")
+  /// Prazos das famílias (YYYY-MM-DD); vazio = sem limite.
+  enrollmentStartsOn   String?  @map("enrollment_starts_on")
+  enrollmentEndsOn     String?  @map("enrollment_ends_on")
+  confirmationStartsOn String?  @map("confirmation_starts_on")
+  confirmationEndsOn   String?  @map("confirmation_ends_on")
+  updatedAt            DateTime @map("updated_at") @db.Timestamptz(3)
+  updatedBy            String?  @map("updated_by") @db.Uuid
 
   @@map("calendar")
   @@schema("catechesis")
@@ -174,10 +179,11 @@ model CatechesisClass {
   capacity         Int
   createdAt        DateTime        @map("created_at") @db.Timestamptz(3)
 
-  catechists  ClassCatechist[]
-  enrollments Enrollment[]
-  attendance  AttendanceRecord[]
-  evaluations Evaluation[]
+  catechists          ClassCatechist[]
+  enrollments         Enrollment[]
+  attendance          AttendanceRecord[]
+  evaluations         Evaluation[]
+  catechistAttendance CatechistAttendance[]
 
   @@unique([catecheticalYear, level, section])
   @@map("classes")
@@ -255,5 +261,39 @@ model EnrollmentDocument {
   /// Um documento de cada tipo por matrícula (um novo substitui o anterior).
   @@unique([enrollmentId, kind])
   @@map("enrollment_documents")
+  @@schema("catechesis")
+}
+
+enum CatechistStatus {
+  IN_TRAINING
+  UNAVAILABLE
+  INACTIVE
+
+  @@schema("catechesis")
+}
+
+/// Estado do catequista definido pela coordenação (ativo/disponível vêm da turma).
+model CatechistProfile {
+  accountId String           @id @map("account_id") @db.Uuid
+  status    CatechistStatus?
+  updatedAt DateTime         @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?          @map("updated_by") @db.Uuid
+
+  @@map("catechist_profiles")
+  @@schema("catechesis")
+}
+
+/// Presença do catequista principal em cada encontro da turma (registada pela coordenação).
+model CatechistAttendance {
+  classId    String           @map("class_id") @db.Uuid
+  date       String
+  status     AttendanceStatus
+  recordedBy String           @map("recorded_by") @db.Uuid
+  recordedAt DateTime         @map("recorded_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, date])
+  @@map("catechist_attendance")
   @@schema("catechesis")
 }

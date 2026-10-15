@@ -227,6 +227,35 @@ encarregado e adultos (18+) por si; os encontros são semanais (sábado ou
 domingo, conforme o período) entre o início e o fim do ano, e só se lançam
 presenças de encontros que já aconteceram. O seed cria o ano 2026/2027.
 
+Gestão da coordenação (permissão `COORDINATION`):
+
+| Método         | Rota                                                  | Descrição                                                                     |
+| -------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`          | `/coordination/overview`                              | resumo do ano: números, evolução, distribuição, o que pede atenção, atividade |
+| `PUT`          | `/coordination/calendar/deadlines/:purpose`           | prazo das famílias (`ENROLLMENT` ou `CONFIRMATION`); `null` retira            |
+| `GET`          | `/coordination/years`                                 | anos com turmas                                                               |
+| `GET`          | `/coordination/classes?year=`                         | turmas de um ano                                                              |
+| `GET`          | `/coordination/classes/:id`                           | turma: catequizandos e presenças por encontro                                 |
+| `GET`          | `/coordination/classes/:id/results`                   | pauta final                                                                   |
+| `GET`          | `/coordination/classes/plan`                          | turmas precisas num nível (`level`, `capacity`)                               |
+| `POST`         | `/coordination/classes/generate`                      | cria as que faltam, coloca os aprovados e atribui catequistas                 |
+| `GET`          | `/coordination/catechists`                            | catequistas por estado (`tab`, `search`)                                      |
+| `GET`          | `/coordination/catechists/:id`                        | perfil com as turmas de cada ano                                              |
+| `PUT`          | `/coordination/catechists/:id/status`                 | em formação, indisponível ou inativo                                          |
+| `GET` · `POST` | `/coordination/catechist-applications(/:id/decision)` | candidaturas (com `APPROVE_CATECHISTS`)                                       |
+| `GET`          | `/coordination/attendance` · `/:date`                 | dias de encontro; turmas, chamadas e presença do catequista                   |
+| `PUT`          | `/coordination/attendance/:date/catechists/:classId`  | presença do catequista                                                        |
+| `GET`          | `/coordination/catechumens` · `/:id`                  | catequizandos do ano; ficha com o percurso                                    |
+
+Público (sem conta):
+
+| Método | Rota                        | Descrição                                                                           |
+| ------ | --------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`  | `/catechesis/calendar`      | ano catequético e prazos                                                            |
+| `GET`  | `/public/enrollments/:code` | estado da matrícula pelo número (só primeiro nome e inicial; 20 pedidos/min por IP) |
+
+Os prazos aplicam-se às famílias; a coordenação com `LATE_ENROLLMENT` confirma fora do prazo.
+
 ### Pagamentos (`payments`)
 
 Cada matrícula ou confirmação submetida gera a taxa a pagar (evento

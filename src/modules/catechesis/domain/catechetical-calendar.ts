@@ -2,7 +2,20 @@ import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import { UniqueId } from "../../../shared/domain/unique-id.js";
 import { SLOT_WEEKDAY, type SessionSlot } from "./catechesis.js";
 import { addDays, isIsoDate, weekday } from "./dates.js";
-import { InvalidCalendarError } from "./errors/catechesis.errors.js";
+import { DeadlineClosedError, InvalidCalendarError } from "./errors/catechesis.errors.js";
+
+/** Prazo das famílias: matrícula nova ou confirmação do ano seguinte. */
+export type DeadlinePurpose = "ENROLLMENT" | "CONFIRMATION";
+
+export interface DateWindow {
+  /** YYYY-MM-DD */
+  startsOn: string;
+  /** YYYY-MM-DD (inclusive) */
+  endsOn: string;
+}
+
+/** Antes de abrir, aberto ou já terminado (sem prazo definido: sempre aberto). */
+export type WindowState = "before" | "open" | "after";
 
 export interface CatecheticalCalendarProps {
   /** "2026/2027" */
@@ -11,6 +24,8 @@ export interface CatecheticalCalendarProps {
   startsOn: string;
   /** Último dia da catequese (YYYY-MM-DD). */
   endsOn: string;
+  /** Prazos das famílias (sem prazo: sempre aberto). */
+  windows: Partial<Record<DeadlinePurpose, DateWindow>>;
   updatedAt: Date;
   updatedBy?: string;
 }
@@ -21,13 +36,66 @@ const LABEL = /^(\d{4})\/(\d{4})$/;
 export class CatecheticalCalendar extends AggregateRoot<CatecheticalCalendarProps> {
   static readonly ID = UniqueId.from("catechesis");
 
-  static define(props: Omit<CatecheticalCalendarProps, "updatedAt">, now: Date) {
+  static define(
+    props: Omit<CatecheticalCalendarProps, "updatedAt" | "windows"> & {
+      windows?: CatecheticalCalendarProps["windows"];
+    },
+    now: Date,
+  ) {
     validate(props);
-    return new CatecheticalCalendar({ ...props, updatedAt: now }, CatecheticalCalendar.ID);
+    return new CatecheticalCalendar(
+      { ...props, windows: { ...props.windows }, updatedAt: now },
+      CatecheticalCalendar.ID,
+    );
   }
 
   static restore(props: CatecheticalCalendarProps) {
-    return new CatecheticalCalendar({ ...props }, CatecheticalCalendar.ID);
+    return new CatecheticalCalendar(
+      { ...props, windows: { ...props.windows } },
+      CatecheticalCalendar.ID,
+    );
+  }
+
+  get windows(): Readonly<Partial<Record<DeadlinePurpose, DateWindow>>> {
+    return this.props.windows;
+  }
+
+  /** Define (ou retira, com `null`) o prazo das famílias. */
+  setWindow(purpose: DeadlinePurpose, window: DateWindow | null, actorId: string, now: Date) {
+    if (window) {
+      if (
+        !isIsoDate(window.startsOn) ||
+        !isIsoDate(window.endsOn) ||
+        window.startsOn > window.endsOn
+      ) {
+        throw new InvalidCalendarError("O fim do prazo tem de ser depois do início.");
+      }
+      this.props.windows[purpose] = { startsOn: window.startsOn, endsOn: window.endsOn };
+    } else {
+      delete this.props.windows[purpose];
+    }
+    Object.assign(this.props, { updatedAt: now, updatedBy: actorId });
+  }
+
+  /** Fora do prazo, as famílias não podem (a coordenação com "fora do prazo" pode). */
+  assertOpen(purpose: DeadlinePurpose, today: string) {
+    const state = this.windowState(purpose, today);
+    if (state === "open") return;
+    const window = this.props.windows[purpose]!;
+    const what = purpose === "ENROLLMENT" ? "As matrículas" : "As confirmações";
+    const date = (value: string) => value.split("-").reverse().join("/");
+    throw new DeadlineClosedError(
+      state === "before"
+        ? `${what} abrem a ${date(window.startsOn)}.`
+        : `${what} terminaram a ${date(window.endsOn)}. Fale com a secretaria da catequese.`,
+    );
+  }
+
+  windowState(purpose: DeadlinePurpose, today: string): WindowState {
+    const window = this.props.windows[purpose];
+    if (!window) return "open";
+    if (today < window.startsOn) return "before";
+    return today > window.endsOn ? "after" : "open";
   }
 
   get label() {

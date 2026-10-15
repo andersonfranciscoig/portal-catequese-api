@@ -6,7 +6,7 @@ import { AccountRole } from "../../../domain/account-role.js";
 import { NotACatechistError } from "../../../domain/errors/identity.errors.js";
 import type { AccountRepository } from "../../../domain/repositories/account.repository.js";
 import { toAdminAccountView, type AdminAccountView } from "../../account-view.js";
-import { loadAdministrator, loadTarget } from "./administrator.js";
+import { loadCatechistApprover, loadTarget } from "./administrator.js";
 
 export interface DecideCatechistInput {
   actorId: string;
@@ -14,7 +14,7 @@ export interface DecideCatechistInput {
   decision: "APPROVED" | "REJECTED";
 }
 
-/** Aprova ou recusa uma conta de catequista. */
+/** Aprova ou recusa uma conta de catequista (administração ou coordenação com a permissão). */
 export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, AdminAccountView> {
   constructor(
     private readonly accounts: AccountRepository,
@@ -24,7 +24,8 @@ export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, Adm
   ) {}
 
   async execute({ actorId, accountId, decision }: DecideCatechistInput) {
-    await loadAdministrator(this.accounts, actorId);
+    // A administração ou a coordenação com "aprovar catequistas".
+    await loadCatechistApprover(this.accounts, actorId);
     const account = await loadTarget(this.accounts, accountId);
     if (!account.hasRole(AccountRole.CATECHIST)) throw new NotACatechistError();
 

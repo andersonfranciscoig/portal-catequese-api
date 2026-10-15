@@ -20,6 +20,8 @@ function toSnapshot(account: Account): PersonSnapshot {
     approvedCatechist:
       account.hasRole(AccountRole.CATECHIST) && account.approval === AccountApproval.APPROVED,
     active: !account.isBlocked,
+    catechistApproval: account.hasRole(AccountRole.CATECHIST) ? account.approval : undefined,
+    createdAt: account.createdAt.toISOString(),
   };
 }
 
@@ -44,6 +46,10 @@ export class IdentityPeopleDirectory extends PeopleDirectory {
       ]),
     );
     return unique.flatMap((id) => found.get(id) ?? []);
+  }
+
+  async listCatechists() {
+    return (await this.accounts.findByRole(AccountRole.CATECHIST)).map(toSnapshot);
   }
 
   async idsWithPermission(permission: NotifiedPermission) {

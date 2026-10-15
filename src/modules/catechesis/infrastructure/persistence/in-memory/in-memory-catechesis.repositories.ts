@@ -1,6 +1,7 @@
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import type { CatechesisClass } from "../../../domain/catechesis-class.js";
+import type { CatechistPresence, CatechistProfile } from "../../../domain/catechist-records.js";
 import type { Catechumen } from "../../../domain/catechumen.js";
 import type { ClassAttendance } from "../../../domain/class-attendance.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
@@ -9,6 +10,8 @@ import type { Evaluation } from "../../../domain/evaluation.js";
 import {
   AttendanceRepository,
   CalendarRepository,
+  CatechistPresenceRepository,
+  CatechistProfileRepository,
   CatechumenRepository,
   ClassRepository,
   EnrollmentDocumentRepository,
@@ -74,6 +77,9 @@ export class InMemoryEnrollmentRepository extends EnrollmentRepository {
   async countConfirmedInClass(classId: string) {
     return (await this.listConfirmedInClass(classId)).length;
   }
+  async findByCode(code: string) {
+    return this.all().find((item) => item.code === code) ?? null;
+  }
   async codeExists(code: string) {
     return this.all().some((item) => item.code === code);
   }
@@ -92,6 +98,14 @@ export class InMemoryClassRepository extends ClassRepository {
   }
   async listByYear(catecheticalYear: string) {
     return [...this.items.values()].filter((item) => item.catecheticalYear === catecheticalYear);
+  }
+  async listForCatechist(accountId: string) {
+    return [...this.items.values()].filter((item) => item.hasCatechist(accountId));
+  }
+  async listYears() {
+    return [...new Set([...this.items.values()].map((item) => item.catecheticalYear))]
+      .sort()
+      .reverse();
   }
   async findForCatechist(accountId: string, catecheticalYear: string) {
     return (
@@ -160,5 +174,31 @@ export class InMemoryEnrollmentDocumentRepository extends EnrollmentDocumentRepo
     if (previous) this.items.delete(previous.id.value);
     this.items.set(document.id.value, document);
     return previous;
+  }
+}
+
+export class InMemoryCatechistProfileRepository extends CatechistProfileRepository {
+  readonly items = new Map<string, CatechistProfile>();
+  async list() {
+    return [...this.items.values()];
+  }
+  async find(accountId: string) {
+    return this.items.get(accountId) ?? null;
+  }
+  async save(profile: CatechistProfile) {
+    this.items.set(profile.accountId, { ...profile });
+  }
+}
+
+export class InMemoryCatechistPresenceRepository extends CatechistPresenceRepository {
+  readonly items = new Map<string, CatechistPresence>();
+  async listForDate(date: string) {
+    return [...this.items.values()].filter((item) => item.date === date);
+  }
+  async listForClasses(classIds: string[]) {
+    return [...this.items.values()].filter((item) => classIds.includes(item.classId));
+  }
+  async save(presence: CatechistPresence) {
+    this.items.set(`${presence.classId}|${presence.date}`, { ...presence });
   }
 }

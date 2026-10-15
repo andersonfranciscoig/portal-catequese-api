@@ -84,3 +84,4 @@ export class DocumentNotFoundError extends error(
   "Documento não encontrado.",
 ) {}
 export class ConfirmationNotAllowedError extends error("validation", "confirmation_not_allowed") {}
+export class DeadlineClosedError extends error("forbidden", "deadline_closed") {}

@@ -1,6 +1,10 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
-import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
+import {
+  CatecheticalCalendar,
+  type DateWindow,
+  type DeadlinePurpose,
+} from "../../../domain/catechetical-calendar.js";
 import { CalendarNotDefinedError } from "../../../domain/errors/catechesis.errors.js";
 import type { CalendarRepository } from "../../../domain/repositories/catechesis.repositories.js";
 import { toCalendarView, type CalendarView } from "../../views.js";
@@ -41,6 +45,45 @@ export class SetCalendarUseCase {
       category: "SETTINGS",
       action: "catechesis.calendar_changed",
       summary: `Definiu o ano catequético ${dates.label} (${dates.startsOn} a ${dates.endsOn})`,
+    });
+    return toCalendarView(calendar);
+  }
+}
+
+const PURPOSE_LABEL: Record<DeadlinePurpose, string> = {
+  ENROLLMENT: "das matrículas",
+  CONFIRMATION: "das confirmações",
+};
+
+/** O prazo das famílias para matrículas ou confirmações (`null`: sem prazo). */
+export class SetDeadlineUseCase {
+  constructor(
+    private readonly calendars: CalendarRepository,
+    private readonly activity: ActivityRecorder,
+    private readonly clock: Clock,
+  ) {}
+
+  async execute({
+    actorId,
+    purpose,
+    window,
+  }: {
+    actorId: string;
+    purpose: DeadlinePurpose;
+    window: DateWindow | null;
+  }): Promise<CalendarView> {
+    const calendar = await this.calendars.get();
+    if (!calendar) throw new CalendarNotDefinedError();
+    calendar.setWindow(purpose, window, actorId, this.clock.now());
+    await this.calendars.save(calendar);
+    const date = (value: string) => value.split("-").reverse().join("/");
+    await this.activity.record({
+      actorId,
+      category: "SETTINGS",
+      action: "catechesis.deadline_changed",
+      summary: window
+        ? `Definiu o prazo ${PURPOSE_LABEL[purpose]}: ${date(window.startsOn)} a ${date(window.endsOn)}`
+        : `Retirou o prazo ${PURPOSE_LABEL[purpose]}`,
     });
     return toCalendarView(calendar);
   }

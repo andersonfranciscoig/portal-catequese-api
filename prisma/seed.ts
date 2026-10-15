@@ -91,10 +91,15 @@ async function main() {
         label: "2026/2027",
         startsOn: "2026-09-26",
         endsOn: "2027-07-03",
+        // Prazos das famílias (a coordenação muda-os em Configurações).
+        enrollmentStartsOn: "2026-09-14",
+        enrollmentEndsOn: "2026-10-31",
+        confirmationStartsOn: "2026-09-01",
+        confirmationEndsOn: "2026-10-31",
         updatedAt: now,
       },
     });
-    console.log("Ano catequético 2026/2027 definido.");
+    console.log("Ano catequético 2026/2027 definido (com os prazos das famílias).");
   } finally {
     await prisma.$disconnect();
   }

@@ -125,6 +125,7 @@ export class ListCatechumensUseCase {
 export interface JourneyYearView {
   catecheticalYear: string;
   enrollmentCode: string;
+  submittedAt: string;
   level: CatechesisLevel;
   type: EnrollmentType;
   status: EnrollmentStatus;
@@ -207,6 +208,7 @@ export class GetCatechumenFileUseCase {
           return {
             catecheticalYear: enrollment.catecheticalYear,
             enrollmentCode: enrollment.code,
+            submittedAt: enrollment.submittedAt.toISOString(),
             level: enrollment.level,
             type: enrollment.type,
             status: enrollment.status,

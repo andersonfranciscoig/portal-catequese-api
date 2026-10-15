@@ -8,9 +8,11 @@ import {
   type EnrollmentSubmittedEvent,
 } from "../../shared/application/integration-events.js";
 import { Notifier } from "../../shared/application/notifier.js";
+import { PaymentsLedger } from "../../shared/application/payments-ledger.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { IdentityModule } from "../identity/index.js";
+import { PaymentsLedgerService } from "./application/services/payments-ledger.service.js";
 import { CreatePaymentForEnrollmentUseCase } from "./application/use-cases/create-payment.use-case.js";
 import {
   GetMyPaymentByCodeUseCase,
@@ -77,7 +79,14 @@ const AUDIT = ActivityRecorder;
     provideUseCase(SetPriceUseCase, [PRICES, AUDIT, Clock]),
     provideUseCase(SaveBankAccountUseCase, [ACCOUNTS, AUDIT, Clock]),
     provideUseCase(DeleteBankAccountUseCase, [ACCOUNTS, AUDIT]),
+    // Contrato partilhado: os relatórios da catequese leem os pagamentos por aqui.
+    {
+      provide: PaymentsLedger,
+      inject: [PAYMENTS],
+      useFactory: (payments: PaymentRepository) => new PaymentsLedgerService(payments),
+    },
   ],
+  exports: [PaymentsLedger],
 })
 export class PaymentsModule implements OnModuleInit {
   constructor(

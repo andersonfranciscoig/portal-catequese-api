@@ -7,6 +7,11 @@ import type { ClassAttendance } from "../../../domain/class-attendance.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
 import type { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
+import type {
+  RequirementCheck,
+  SacramentCelebration,
+  SacramentType,
+} from "../../../domain/sacraments.js";
 import {
   AttendanceRepository,
   CalendarRepository,
@@ -18,6 +23,7 @@ import {
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
+  SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 
 /* Repositórios em memória: testes e desenvolvimento sem base de dados. */
@@ -166,6 +172,9 @@ export class InMemoryEnrollmentDocumentRepository extends EnrollmentDocumentRepo
   async listForEnrollment(enrollmentId: string) {
     return [...this.items.values()].filter((item) => item.enrollmentId === enrollmentId);
   }
+  async listForEnrollments(enrollmentIds: string[]) {
+    return [...this.items.values()].filter((item) => enrollmentIds.includes(item.enrollmentId));
+  }
   async save(document: EnrollmentDocument) {
     const previous =
       [...this.items.values()].find(
@@ -200,5 +209,31 @@ export class InMemoryCatechistPresenceRepository extends CatechistPresenceReposi
   }
   async save(presence: CatechistPresence) {
     this.items.set(`${presence.classId}|${presence.date}`, { ...presence });
+  }
+}
+
+export class InMemorySacramentRepository extends SacramentRepository {
+  readonly celebrations = new Map<string, SacramentCelebration>();
+  readonly checks = new Map<string, RequirementCheck>();
+  async listCelebrations(catecheticalYear: string) {
+    return [...this.celebrations.values()].filter(
+      (item) => item.catecheticalYear === catecheticalYear,
+    );
+  }
+  async saveCelebration(celebration: SacramentCelebration) {
+    this.celebrations.set(`${celebration.catecheticalYear}:${celebration.type}`, {
+      ...celebration,
+    });
+  }
+  async deleteCelebration(catecheticalYear: string, type: SacramentType) {
+    this.celebrations.delete(`${catecheticalYear}:${type}`);
+  }
+  async listChecks(catechumenIds: string[], sacrament: SacramentType) {
+    return [...this.checks.values()].filter(
+      (item) => item.sacrament === sacrament && catechumenIds.includes(item.catechumenId),
+    );
+  }
+  async saveCheck(check: RequirementCheck) {
+    this.checks.set(`${check.catechumenId}:${check.sacrament}:${check.requirement}`, { ...check });
   }
 }

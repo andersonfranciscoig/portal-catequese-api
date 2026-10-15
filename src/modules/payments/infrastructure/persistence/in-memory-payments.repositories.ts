@@ -31,6 +31,9 @@ export class InMemoryPaymentRepository extends PaymentRepository {
   async listAll() {
     return this.all();
   }
+  async listForEnrollments(enrollmentIds: string[]) {
+    return this.all().filter((item) => enrollmentIds.includes(item.enrollmentId));
+  }
   async save(payment: Payment) {
     this.items.set(payment.id.value, payment);
   }

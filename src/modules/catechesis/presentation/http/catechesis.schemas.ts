@@ -10,6 +10,8 @@ import {
   SessionSlot,
   YearOutcome,
 } from "../../domain/catechesis.js";
+import { SacramentRequirement, SacramentType } from "../../domain/sacraments.js";
+import { REPORT_EXPORTS } from "../../application/use-cases/coordination/reports.use-cases.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato AAAA-MM-DD.");
 const optionalText = (max: number) =>
@@ -196,3 +198,26 @@ export const catechumenListSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 export type CatechumenListQuery = z.infer<typeof catechumenListSchema>;
+
+/* Sacramentos */
+
+export const sacramentTypeParam = z.enum(SacramentType);
+export const sacramentRequirementParam = z.enum(SacramentRequirement);
+
+export const candidateListSchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  filter: z.enum(["ALL", "READY", "PENDING"]).optional(),
+});
+export type CandidateListQuery = z.infer<typeof candidateListSchema>;
+
+export const requirementSchema = z.object({ met: z.boolean() });
+export type RequirementBody = z.infer<typeof requirementSchema>;
+
+export const celebrationSchema = z.object({
+  celebration: z.object({ date: isoDate, place: z.string().trim().min(3).max(120) }).nullable(),
+});
+export type CelebrationBody = z.infer<typeof celebrationSchema>;
+
+/* Relatórios */
+
+export const reportExportParam = z.enum(REPORT_EXPORTS);

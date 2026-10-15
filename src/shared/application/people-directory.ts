@@ -11,6 +11,10 @@ export interface PersonSnapshot {
   approvedCatechist: boolean;
   /** Não está bloqueada. */
   active: boolean;
+  /** Estado do papel de catequista (só quem o tem). */
+  catechistApproval?: "PENDING" | "APPROVED" | "REJECTED";
+  /** Quando a conta foi criada (ISO). */
+  createdAt: string;
 }
 
 /**
@@ -22,6 +26,8 @@ export abstract class PeopleDirectory {
   abstract find(id: string): Promise<PersonSnapshot | null>;
   /** As que existirem, pela mesma ordem (ids desconhecidos ficam de fora). */
   abstract findMany(ids: string[]): Promise<PersonSnapshot[]>;
+  /** Todas as contas com o papel de catequista (aprovadas ou não). */
+  abstract listCatechists(): Promise<PersonSnapshot[]>;
   /** Contas ativas que têm a permissão em vigor (o super admin tem todas). */
   abstract idsWithPermission(permission: NotifiedPermission): Promise<string[]>;
 }

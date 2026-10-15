@@ -155,3 +155,11 @@ export class AccountWithoutRolesError extends DomainError {
     super("A conta tem de ter pelo menos um papel.");
   }
 }
+
+export class NotCatechistApproverError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "identity.not_catechist_approver";
+  constructor() {
+    super("A sua conta não tem permissão para aprovar catequistas.");
+  }
+}

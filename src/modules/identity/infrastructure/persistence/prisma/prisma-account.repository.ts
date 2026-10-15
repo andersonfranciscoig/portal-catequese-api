@@ -1,4 +1,4 @@
-import type { Permission } from "../../../domain/account-role.js";
+import type { AccountRole, Permission } from "../../../domain/account-role.js";
 import { Injectable } from "@nestjs/common";
 
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
@@ -29,6 +29,14 @@ export class PrismaAccountRepository extends AccountRepository {
     if (!ids.length) return [];
     const rows = await this.prisma.account.findMany({
       where: { id: { in: ids.map((id) => id.value) } },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
+  }
+
+  async findByRole(role: AccountRole) {
+    const rows = await this.prisma.account.findMany({
+      where: { roles: { has: role } },
+      orderBy: { fullName: "asc" },
     });
     return rows.map((row) => AccountMapper.toDomain(row));
   }

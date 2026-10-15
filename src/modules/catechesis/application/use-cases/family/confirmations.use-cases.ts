@@ -226,6 +226,8 @@ export interface ConfirmInput {
   preferredSlot: SessionSlot;
   /** Coordenação em nome da família (sem verificar a conta). */
   assisted?: boolean;
+  /** Fora do prazo (coordenação com permissão "fora do prazo"). */
+  allowLate?: boolean;
 }
 
 /**
@@ -251,6 +253,7 @@ export class ConfirmEnrollmentUseCase {
     previousEnrollmentId,
     preferredSlot,
     assisted,
+    allowLate,
   }: ConfirmInput): Promise<ConfirmationReceiptView> {
     if (!assisted) await this.access.applicant(actorId);
     const previous = await this.enrollments.findById(UniqueId.from(previousEnrollmentId));
@@ -279,6 +282,7 @@ export class ConfirmEnrollmentUseCase {
 
     const calendar = (await this.calendars.get())!;
     const now = this.clock.now();
+    if (!allowLate) calendar.assertOpen("CONFIRMATION", luandaToday(now));
     const enrollment = Enrollment.confirmFromPrevious({
       previous,
       code: await this.codes.next(Number(calendar.label.slice(0, 4))),

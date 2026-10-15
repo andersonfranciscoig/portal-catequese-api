@@ -1,5 +1,9 @@
 import type { PeopleDirectory } from "../../../shared/application/people-directory.js";
-import type { CatecheticalCalendar } from "../domain/catechetical-calendar.js";
+import type {
+  CatecheticalCalendar,
+  DateWindow,
+  DeadlinePurpose,
+} from "../domain/catechetical-calendar.js";
 import type {
   AttendanceStatus,
   CatechesisLevel,
@@ -23,6 +27,8 @@ export interface CalendarView {
   label: string;
   startsOn: string;
   endsOn: string;
+  /** Prazos das famílias (ausente: sem prazo). */
+  windows: Partial<Record<DeadlinePurpose, DateWindow>>;
   updatedAt: string;
 }
 
@@ -146,6 +152,7 @@ export function toCalendarView(calendar: CatecheticalCalendar): CalendarView {
     label: calendar.label,
     startsOn: calendar.startsOn,
     endsOn: calendar.endsOn,
+    windows: { ...calendar.windows },
     updatedAt: calendar.updatedAt.toISOString(),
   };
 }

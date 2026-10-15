@@ -2,6 +2,7 @@ import type { UniqueId } from "../../../../shared/domain/unique-id.js";
 import type { CatecheticalCalendar } from "../catechetical-calendar.js";
 import type { EnrollmentStatus } from "../catechesis.js";
 import type { CatechesisClass } from "../catechesis-class.js";
+import type { CatechistPresence, CatechistProfile } from "../catechist-records.js";
 import type { Catechumen } from "../catechumen.js";
 import type { AttendanceEntry, ClassAttendance } from "../class-attendance.js";
 import type { Enrollment } from "../enrollment.js";
@@ -44,6 +45,7 @@ export abstract class EnrollmentRepository {
   abstract listConfirmedInClass(classId: string): Promise<Enrollment[]>;
   abstract countConfirmedInClass(classId: string): Promise<number>;
   abstract codeExists(code: string): Promise<boolean>;
+  abstract findByCode(code: string): Promise<Enrollment | null>;
   abstract save(enrollment: Enrollment): Promise<void>;
 }
 
@@ -51,6 +53,10 @@ export abstract class ClassRepository {
   abstract findById(id: UniqueId): Promise<CatechesisClass | null>;
   abstract findByIds(ids: string[]): Promise<CatechesisClass[]>;
   abstract listByYear(catecheticalYear: string): Promise<CatechesisClass[]>;
+  /** Todas as turmas do catequista (todos os anos). */
+  abstract listForCatechist(accountId: string): Promise<CatechesisClass[]>;
+  /** Anos com turmas (mais recentes primeiro). */
+  abstract listYears(): Promise<string[]>;
   /** Turma do catequista no ano (como principal ou auxiliar). */
   abstract findForCatechist(
     accountId: string,
@@ -82,4 +88,16 @@ export abstract class EnrollmentDocumentRepository {
    * anterior (para apagar o ficheiro antigo).
    */
   abstract save(document: EnrollmentDocument): Promise<EnrollmentDocument | null>;
+}
+
+export abstract class CatechistProfileRepository {
+  abstract list(): Promise<CatechistProfile[]>;
+  abstract find(accountId: string): Promise<CatechistProfile | null>;
+  abstract save(profile: CatechistProfile): Promise<void>;
+}
+
+export abstract class CatechistPresenceRepository {
+  abstract listForDate(date: string): Promise<CatechistPresence[]>;
+  abstract listForClasses(classIds: string[]): Promise<CatechistPresence[]>;
+  abstract save(presence: CatechistPresence): Promise<void>;
 }

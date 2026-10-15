@@ -51,6 +51,8 @@ export interface SubmitEnrollmentInput {
   };
   /** A família entrega os documentos em papel na secretaria (em vez de os anexar). */
   documentsInPerson?: boolean;
+  /** Fora do prazo (coordenação com permissão "fora do prazo"). */
+  allowLate?: boolean;
 }
 
 const sameName = (a: string, b: string) =>
@@ -81,6 +83,7 @@ export class SubmitEnrollmentUseCase {
     catechumen: data,
     catechesis,
     documentsInPerson,
+    allowLate,
   }: SubmitEnrollmentInput): Promise<EnrollmentView> {
     const person = await this.access.applicant(accountId);
     const forChild = Boolean(guardian);
@@ -91,6 +94,7 @@ export class SubmitEnrollmentUseCase {
     if (!calendar) throw new CalendarNotDefinedError();
     const now = this.clock.now();
     const today = luandaToday(now);
+    if (!allowLate) calendar.assertOpen("ENROLLMENT", today);
     if (!isIsoDate(data.birthDate) || data.birthDate >= today) {
       throw new InvalidEnrollmentError("A data de nascimento não é válida.");
     }

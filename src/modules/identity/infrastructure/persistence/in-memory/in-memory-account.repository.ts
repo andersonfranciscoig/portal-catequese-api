@@ -1,4 +1,4 @@
-import type { Permission } from "../../../domain/account-role.js";
+import type { AccountRole, Permission } from "../../../domain/account-role.js";
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { Account } from "../../../domain/account.js";
 import {
@@ -21,6 +21,10 @@ export class InMemoryAccountRepository extends AccountRepository {
 
   async findByIds(ids: UniqueId[]) {
     return ids.flatMap((id) => this.items.get(id.value) ?? []);
+  }
+
+  async findByRole(role: AccountRole) {
+    return [...this.items.values()].filter((item) => item.hasRole(role));
   }
 
   async findByEmail(email: Email) {

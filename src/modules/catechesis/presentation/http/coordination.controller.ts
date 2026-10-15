@@ -46,6 +46,7 @@ import {
 } from "../../application/use-cases/family/confirmations.use-cases.js";
 import {
   calendarSchema,
+  classListSchema,
   classCatechistsSchema,
   confirmationSearchSchema,
   confirmSchema,
@@ -98,9 +99,10 @@ export class CoordinationController {
   }
 
   @Get("classes")
-  @ApiOperation({ summary: "Turmas do ano" })
-  classes() {
-    return this.listClasses.execute();
+  @ApiOperation({ summary: "Turmas de um ano (por omissão, o em curso)" })
+  @ApiZodQuery(classListSchema)
+  classes(@Query(new ZodValidationPipe(classListSchema)) query: { year?: string }) {
+    return this.listClasses.execute(query);
   }
 
   @Post("classes")
@@ -179,6 +181,12 @@ export class CoordinationController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(confirmSchema)) body: ConfirmBody,
   ) {
-    return this.confirm.execute({ ...body, actorId: actor.accountId, assisted: true });
+    return this.confirm.execute({
+      ...body,
+      actorId: actor.accountId,
+      assisted: true,
+      // Fora do prazo das famílias só com a permissão "fora do prazo".
+      allowLate: actor.permissions.includes(Permission.LATE_ENROLLMENT),
+    });
   }
 }

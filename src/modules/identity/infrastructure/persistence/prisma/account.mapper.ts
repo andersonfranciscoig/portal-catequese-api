@@ -10,7 +10,7 @@ export const AccountMapper = {
   toDomain(row: AccountRow): Account {
     return Account.restore(
       {
-        role: row.role,
+        roles: row.roles,
         fullName: FullName.restore(row.fullName),
         phone: PhoneNumber.restore(row.phone),
         email: row.email ? Email.restore(row.email) : undefined,
@@ -31,7 +31,7 @@ export const AccountMapper = {
   toPersistence(account: Account): AccountRow {
     return {
       id: account.id.value,
-      role: account.role,
+      roles: [...account.roles],
       fullName: account.fullName.value,
       phone: account.phone.value,
       email: account.email?.value ?? null,

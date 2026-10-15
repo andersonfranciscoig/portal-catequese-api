@@ -1,0 +1,350 @@
+// Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
+// As contas (encarregados, adultos, catequistas) vivem no módulo de identidade:
+// aqui só se guardam os ids, sem chaves estrangeiras entre esquemas.
+
+enum CatechesisLevel {
+  BAPTISM_PRE
+  BAPTISM_1
+  BAPTISM_2
+  BAPTISM_3
+  COMMUNION_PRE
+  COMMUNION_1
+  COMMUNION_2
+  COMMUNION_3
+  BIBLICAL
+  CONFIRMATION_1
+  CONFIRMATION_2
+  CONFIRMATION_3
+
+  @@schema("catechesis")
+}
+
+enum SessionSlot {
+  SATURDAY_MORNING
+  SATURDAY_AFTERNOON
+  SUNDAY_AFTER_MASS
+
+  @@schema("catechesis")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+
+  @@schema("catechesis")
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  GRANDPARENT
+  UNCLE_AUNT
+  OTHER
+
+  @@schema("catechesis")
+}
+
+enum EnrollmentStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  PENDING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+  WAITLIST
+
+  @@schema("catechesis")
+}
+
+enum EnrollmentType {
+  NEW
+  RENEWAL
+  TRANSFER
+
+  @@schema("catechesis")
+}
+
+enum ClassCatechistRole {
+  LEAD
+  ASSISTANT
+
+  @@schema("catechesis")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  JUSTIFIED
+
+  @@schema("catechesis")
+}
+
+enum YearOutcome {
+  PASSED
+  REPEAT
+
+  @@schema("catechesis")
+}
+
+/// Ano catequético em curso (datas definidas pela coordenação).
+model CatecheticalCalendar {
+  id                   String   @id
+  label                String
+  startsOn             String   @map("starts_on")
+  endsOn               String   @map("ends_on")
+  /// Prazos das famílias (YYYY-MM-DD); vazio = sem limite.
+  enrollmentStartsOn   String?  @map("enrollment_starts_on")
+  enrollmentEndsOn     String?  @map("enrollment_ends_on")
+  confirmationStartsOn String?  @map("confirmation_starts_on")
+  confirmationEndsOn   String?  @map("confirmation_ends_on")
+  updatedAt            DateTime @map("updated_at") @db.Timestamptz(3)
+  updatedBy            String?  @map("updated_by") @db.Uuid
+
+  @@map("calendar")
+  @@schema("catechesis")
+}
+
+model Catechumen {
+  id                   String                @id @db.Uuid
+  fullName             String                @map("full_name")
+  birthDate            String                @map("birth_date")
+  gender               Gender
+  address              String?
+  baptized             Boolean
+  firstCommunion       Boolean               @map("first_communion")
+  /// Conta do encarregado (menores).
+  guardianAccountId    String?               @map("guardian_account_id") @db.Uuid
+  guardianRelationship GuardianRelationship? @map("guardian_relationship")
+  /// Conta própria (adultos inscritos por si).
+  accountId            String?               @map("account_id") @db.Uuid
+  createdAt            DateTime              @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @map("updated_at") @db.Timestamptz(3)
+
+  enrollments     Enrollment[]
+  sacramentChecks SacramentRequirementCheck[]
+
+  @@index([guardianAccountId])
+  @@index([accountId])
+  @@map("catechumens")
+  @@schema("catechesis")
+}
+
+model Enrollment {
+  id                   String           @id @db.Uuid
+  code                 String           @unique
+  catechumenId         String           @map("catechumen_id") @db.Uuid
+  catecheticalYear     String           @map("catechetical_year")
+  level                CatechesisLevel
+  type                 EnrollmentType
+  status               EnrollmentStatus
+  preferredSlot        SessionSlot      @map("preferred_slot")
+  previousParish       String?          @map("previous_parish")
+  notes                String?
+  submittedBy          String           @map("submitted_by") @db.Uuid
+  submittedAt          DateTime         @map("submitted_at") @db.Timestamptz(3)
+  classId              String?          @map("class_id") @db.Uuid
+  decidedBy            String?          @map("decided_by") @db.Uuid
+  decidedAt            DateTime?        @map("decided_at") @db.Timestamptz(3)
+  updatedAt            DateTime         @map("updated_at") @db.Timestamptz(3)
+  /// A família entrega os documentos em papel na secretaria.
+  documentsInPerson    Boolean          @default(false) @map("documents_in_person")
+  /// Motivo da recusa ou do pedido de documentos (mostrado à família).
+  reviewNote           String?          @map("review_note")
+  /// Confirmação: a matrícula do ano anterior que esta continua.
+  previousEnrollmentId String?          @unique @map("previous_enrollment_id") @db.Uuid
+  /// Mudanças de estado: [{ status, at, actorId?, note? }].
+  history              Json             @default("[]")
+
+  documents EnrollmentDocument[]
+
+  catechumen Catechumen       @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+  klass      CatechesisClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  /// Uma matrícula por catequizando em cada ano.
+  @@unique([catechumenId, catecheticalYear])
+  @@index([catecheticalYear, status])
+  @@index([classId])
+  @@index([submittedBy])
+  @@map("enrollments")
+  @@schema("catechesis")
+}
+
+model CatechesisClass {
+  id               String          @id @db.Uuid
+  catecheticalYear String          @map("catechetical_year")
+  level            CatechesisLevel
+  section          String
+  slot             SessionSlot
+  startTime        String?         @map("start_time")
+  room             String
+  capacity         Int
+  createdAt        DateTime        @map("created_at") @db.Timestamptz(3)
+
+  catechists          ClassCatechist[]
+  enrollments         Enrollment[]
+  attendance          AttendanceRecord[]
+  evaluations         Evaluation[]
+  catechistAttendance CatechistAttendance[]
+
+  @@unique([catecheticalYear, level, section])
+  @@map("classes")
+  @@schema("catechesis")
+}
+
+model ClassCatechist {
+  classId   String             @map("class_id") @db.Uuid
+  accountId String             @map("account_id") @db.Uuid
+  role      ClassCatechistRole
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, accountId])
+  @@index([accountId])
+  @@map("class_catechists")
+  @@schema("catechesis")
+}
+
+model AttendanceRecord {
+  classId      String           @map("class_id") @db.Uuid
+  catechumenId String           @map("catechumen_id") @db.Uuid
+  date         String
+  status       AttendanceStatus
+  recordedBy   String           @map("recorded_by") @db.Uuid
+  recordedAt   DateTime         @map("recorded_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, date, catechumenId])
+  @@index([catechumenId])
+  @@map("attendance")
+  @@schema("catechesis")
+}
+
+model Evaluation {
+  classId      String       @map("class_id") @db.Uuid
+  catechumenId String       @map("catechumen_id") @db.Uuid
+  t1           Float?
+  t2           Float?
+  t3           Float?
+  outcome      YearOutcome?
+  updatedBy    String       @map("updated_by") @db.Uuid
+  updatedAt    DateTime     @map("updated_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, catechumenId])
+  @@map("evaluations")
+  @@schema("catechesis")
+}
+
+enum EnrollmentDocumentKind {
+  ID
+  BAPTISM
+  PHOTO
+
+  @@schema("catechesis")
+}
+
+/// Documento enviado pela família (o ficheiro fica no armazenamento; aqui só a chave).
+model EnrollmentDocument {
+  id           String                 @id @db.Uuid
+  enrollmentId String                 @map("enrollment_id") @db.Uuid
+  kind         EnrollmentDocumentKind
+  fileKey      String                 @map("file_key")
+  fileName     String                 @map("file_name")
+  fileSize     Int                    @map("file_size")
+  contentType  String                 @map("content_type")
+  uploadedBy   String                 @map("uploaded_by") @db.Uuid
+  uploadedAt   DateTime               @map("uploaded_at") @db.Timestamptz(3)
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  /// Um documento de cada tipo por matrícula (um novo substitui o anterior).
+  @@unique([enrollmentId, kind])
+  @@map("enrollment_documents")
+  @@schema("catechesis")
+}
+
+enum CatechistStatus {
+  IN_TRAINING
+  UNAVAILABLE
+  INACTIVE
+
+  @@schema("catechesis")
+}
+
+/// Estado do catequista definido pela coordenação (ativo/disponível vêm da turma).
+model CatechistProfile {
+  accountId String           @id @map("account_id") @db.Uuid
+  status    CatechistStatus?
+  updatedAt DateTime         @map("updated_at") @db.Timestamptz(3)
+  updatedBy String?          @map("updated_by") @db.Uuid
+
+  @@map("catechist_profiles")
+  @@schema("catechesis")
+}
+
+/// Presença do catequista principal em cada encontro da turma (registada pela coordenação).
+model CatechistAttendance {
+  classId    String           @map("class_id") @db.Uuid
+  date       String
+  status     AttendanceStatus
+  recordedBy String           @map("recorded_by") @db.Uuid
+  recordedAt DateTime         @map("recorded_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, date])
+  @@map("catechist_attendance")
+  @@schema("catechesis")
+}
+
+enum SacramentType {
+  BAPTISM
+  FIRST_COMMUNION
+  CONFIRMATION
+
+  @@schema("catechesis")
+}
+
+/// O que a coordenação marca à mão (os documentos online e o percurso contam sozinhos).
+enum SacramentRequirement {
+  BIRTH_CERTIFICATE
+  BAPTISM_CERTIFICATE
+  RECONCILIATION
+  GODPARENT
+  PARENTS_MEETING
+
+  @@schema("catechesis")
+}
+
+/// Data e local de cada celebração do ano (definidos pela coordenação).
+model SacramentCelebration {
+  catecheticalYear String        @map("catechetical_year")
+  type             SacramentType
+  /// YYYY-MM-DD
+  date             String
+  place            String
+  updatedAt        DateTime      @map("updated_at") @db.Timestamptz(3)
+  updatedBy        String?       @map("updated_by") @db.Uuid
+
+  @@id([catecheticalYear, type])
+  @@map("sacrament_celebrations")
+  @@schema("catechesis")
+}
+
+/// Requisito de um candidato marcado pela coordenação (entregue / feito).
+model SacramentRequirementCheck {
+  catechumenId String               @map("catechumen_id") @db.Uuid
+  sacrament    SacramentType
+  requirement  SacramentRequirement
+  met          Boolean
+  updatedAt    DateTime             @map("updated_at") @db.Timestamptz(3)
+  updatedBy    String               @map("updated_by") @db.Uuid
+
+  catechumen Catechumen @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+
+  @@id([catechumenId, sacrament, requirement])
+  @@map("sacrament_requirement_checks")
+  @@schema("catechesis")
+}

@@ -9,9 +9,12 @@ import {
   type AccessRequestApprovedEvent,
 } from "../../shared/application/integration-events.js";
 import { LaunchAccessPolicy } from "../../shared/application/launch-access-policy.js";
+import { Notifier } from "../../shared/application/notifier.js";
+import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { AccountDirectoryService } from "./application/account-directory.service.js";
+import { IdentityPeopleDirectory } from "./application/identity-people-directory.js";
 import { AccessTokenIssuer } from "./application/ports/access-token-issuer.js";
 import { RefreshTokenGenerator } from "./application/ports/refresh-token-generator.js";
 import { SessionIssuer } from "./application/session-issuer.js";
@@ -22,9 +25,12 @@ import { GetAccountStatsUseCase } from "./application/use-cases/admin/get-accoun
 import { GetAccountUseCase } from "./application/use-cases/admin/get-account.use-case.js";
 import { GrantBetaAccessByContactUseCase } from "./application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "./application/use-cases/admin/list-accounts.use-case.js";
+import { ListCatechistApplicationsUseCase } from "./application/use-cases/admin/list-catechist-applications.use-case.js";
 import { SetAccountPermissionsUseCase } from "./application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "./application/use-cases/admin/set-beta-access.use-case.js";
+import { SetAccountRolesUseCase } from "./application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "./application/use-cases/admin/unblock-account.use-case.js";
+import { AddOwnRoleUseCase } from "./application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "./application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "./application/use-cases/change-password.use-case.js";
 import { GetCurrentAccountUseCase } from "./application/use-cases/get-current-account.use-case.js";
@@ -41,6 +47,7 @@ import { JwtAccessTokenIssuer } from "./infrastructure/crypto/jwt-access-token.i
 import { PrismaAccountRepository } from "./infrastructure/persistence/prisma/prisma-account.repository.js";
 import { PrismaSessionRepository } from "./infrastructure/persistence/prisma/prisma-session.repository.js";
 import { AdminAccountsController } from "./presentation/http/admin-accounts.controller.js";
+import { CoordinationCatechistsController } from "./presentation/http/coordination-catechists.controller.js";
 import { AuthController } from "./presentation/http/auth.controller.js";
 import { AuthGuard } from "./presentation/http/guards/auth.guard.js";
 import { PermissionsGuard } from "./presentation/http/guards/permissions.guard.js";
@@ -62,7 +69,7 @@ const AUDIT = ActivityRecorder;
       }),
     }),
   ],
-  controllers: [AuthController, AdminAccountsController],
+  controllers: [AuthController, AdminAccountsController, CoordinationCatechistsController],
   providers: [
     { provide: AccountRepository, useClass: PrismaAccountRepository },
     { provide: SessionRepository, useClass: PrismaSessionRepository },
@@ -90,6 +97,11 @@ const AUDIT = ActivityRecorder;
     },
     provideUseCase(SignInPolicy, [LaunchAccessPolicy]),
     provideUseCase(AccountDirectoryService, [AccountRepository]),
+    {
+      provide: PeopleDirectory,
+      inject: [AccountRepository],
+      useFactory: (accounts: AccountRepository) => new IdentityPeopleDirectory(accounts),
+    },
     // Conta própria
     provideUseCase(RegisterAccountUseCase, [
       AccountRepository,
@@ -99,6 +111,7 @@ const AUDIT = ActivityRecorder;
       EventBus,
       AUDIT,
       Clock,
+      Notifier,
     ]),
     provideUseCase(AuthenticateUseCase, [
       AccountRepository,
@@ -119,27 +132,31 @@ const AUDIT = ActivityRecorder;
     provideUseCase(GetCurrentAccountUseCase, [AccountRepository]),
     provideUseCase(UpdateProfileUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(ChangePasswordUseCase, [AccountRepository, PasswordHasher, AUDIT, Clock]),
+    provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     // Administração
     provideUseCase(ListAccountsUseCase, [AccountRepository]),
+    provideUseCase(ListCatechistApplicationsUseCase, [AccountRepository]),
     provideUseCase(GetAccountUseCase, [AccountRepository]),
     provideUseCase(GetAccountStatsUseCase, [AccountRepository]),
-    provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
     provideUseCase(BlockAccountUseCase, [AccountRepository, SessionRepository, AUDIT, Clock]),
-    provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock]),
-    provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
+    provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
     provideUseCase(SetBetaAccessUseCase, [AccountRepository, AUDIT, Clock]),
+    provideUseCase(SetAccountRolesUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     provideUseCase(GrantBetaAccessByContactUseCase, [AccountRepository, Clock]),
     AuthGuard,
     PermissionsGuard,
   ],
   // Os outros módulos protegem rotas com os guards (que precisam do verificador
-  // de tokens e das contas) e consultam nomes pelo diretório.
+  // de tokens e das contas) e consultam nomes e papéis pelos diretórios.
   exports: [
     AuthGuard,
     PermissionsGuard,
     AccessTokenIssuer,
     AccountRepository,
     AccountDirectoryService,
+    PeopleDirectory,
   ],
 })
 export class IdentityModule implements OnModuleInit {

@@ -1,3 +1,4 @@
+import { RecordingNotifier } from "../../../shared/testing/recording-notifier.js";
 import { FixedClock } from "../../../shared/testing/fixed-clock.js";
 import { RecordingActivity } from "../../../shared/testing/recording-activity.js";
 import { RecordingEventBus } from "../../../shared/testing/recording-event-bus.js";
@@ -15,9 +16,12 @@ import { GetAccountStatsUseCase } from "../application/use-cases/admin/get-accou
 import { GetAccountUseCase } from "../application/use-cases/admin/get-account.use-case.js";
 import { GrantBetaAccessByContactUseCase } from "../application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "../application/use-cases/admin/list-accounts.use-case.js";
+import { ListCatechistApplicationsUseCase } from "../application/use-cases/admin/list-catechist-applications.use-case.js";
 import { SetAccountPermissionsUseCase } from "../application/use-cases/admin/set-account-permissions.use-case.js";
 import { SetBetaAccessUseCase } from "../application/use-cases/admin/set-beta-access.use-case.js";
+import { SetAccountRolesUseCase } from "../application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "../application/use-cases/admin/unblock-account.use-case.js";
+import { AddOwnRoleUseCase } from "../application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "../application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "../application/use-cases/change-password.use-case.js";
 import { GetCurrentAccountUseCase } from "../application/use-cases/get-current-account.use-case.js";
@@ -37,6 +41,7 @@ import {
 /** Monta os casos de uso de identidade com dependências em memória. */
 export function createIdentityTestContext() {
   const accounts = new InMemoryAccountRepository();
+  const notifier = new RecordingNotifier();
   const sessions = new InMemorySessionRepository();
   const hasher = new FakePasswordHasher();
   const accessTokens = new FakeAccessTokenIssuer();
@@ -55,13 +60,13 @@ export function createIdentityTestContext() {
     fullName: string;
     phone: string;
     email?: string;
-    role?: AccountRole;
+    roles?: AccountRole[];
     permissions?: Permission[];
     betaAccess?: boolean;
     password?: string;
   }) {
     const account = Account.register({
-      role: options.role ?? "GUARDIAN",
+      roles: options.roles ?? ["GUARDIAN"],
       fullName: FullName.create(options.fullName),
       phone: PhoneNumber.create(options.phone),
       email: options.email ? Email.create(options.email) : undefined,
@@ -77,6 +82,7 @@ export function createIdentityTestContext() {
 
   return {
     accounts,
+    notifier,
     sessions,
     accessTokens,
     events,
@@ -84,20 +90,32 @@ export function createIdentityTestContext() {
     launch,
     clock,
     seedAccount,
-    register: new RegisterAccountUseCase(accounts, hasher, issuer, policy, events, activity, clock),
+    register: new RegisterAccountUseCase(
+      accounts,
+      hasher,
+      issuer,
+      policy,
+      events,
+      activity,
+      clock,
+      notifier,
+    ),
     authenticate: new AuthenticateUseCase(accounts, hasher, issuer, policy, activity),
     refresh: new RefreshSessionUseCase(sessions, accounts, refreshTokens, issuer, policy, clock),
     signOut: new SignOutUseCase(sessions, refreshTokens, activity, clock),
     currentAccount: new GetCurrentAccountUseCase(accounts),
     updateProfile: new UpdateProfileUseCase(accounts, activity, clock),
     changePassword: new ChangePasswordUseCase(accounts, hasher, activity, clock),
+    addOwnRole: new AddOwnRoleUseCase(accounts, events, activity, clock, notifier),
+    setRoles: new SetAccountRolesUseCase(accounts, events, activity, clock, notifier),
     listAccounts: new ListAccountsUseCase(accounts),
     getAccount: new GetAccountUseCase(accounts),
     stats: new GetAccountStatsUseCase(accounts),
-    setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock),
+    setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock, notifier),
     block: new BlockAccountUseCase(accounts, sessions, activity, clock),
-    unblock: new UnblockAccountUseCase(accounts, activity, clock),
-    decideCatechist: new DecideCatechistUseCase(accounts, activity, clock),
+    unblock: new UnblockAccountUseCase(accounts, activity, clock, notifier),
+    catechistApplications: new ListCatechistApplicationsUseCase(accounts),
+    decideCatechist: new DecideCatechistUseCase(accounts, activity, clock, notifier),
     setBetaAccess: new SetBetaAccessUseCase(accounts, activity, clock),
     grantBetaByContact: new GrantBetaAccessByContactUseCase(accounts, clock),
     directory: new AccountDirectoryService(accounts),

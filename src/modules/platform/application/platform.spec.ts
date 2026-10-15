@@ -135,3 +135,15 @@ describe("Pedidos de acesso", () => {
     expect((await ctx.list.execute({ status: "REJECTED" }))[0].decisionNote).toBe("Grupo completo");
   });
 });
+
+describe("Notificações dos pedidos de acesso", () => {
+  it("um pedido novo avisa a administração", async () => {
+    const ctx = createPlatformTestContext();
+    await ctx.submit.execute(request);
+    expect(ctx.notifier.last("platform.access_requested")).toMatchObject({
+      to: { permission: "SUPER_ADMIN" },
+      body: "Rosa Afonso (encarregado de educação) pediu acesso.",
+      link: "/admin/pedidos",
+    });
+  });
+});

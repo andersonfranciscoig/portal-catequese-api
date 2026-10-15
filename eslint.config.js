@@ -3,7 +3,7 @@ import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 /** Módulos do monólito. Ao criar um módulo novo, acrescente-o aqui. */
-const MODULES = ["identity", "platform", "audit"];
+const MODULES = ["identity", "platform", "audit", "catechesis", "notifications", "payments"];
 
 const LAYERS = "(domain|application|infrastructure|presentation|testing)";
 

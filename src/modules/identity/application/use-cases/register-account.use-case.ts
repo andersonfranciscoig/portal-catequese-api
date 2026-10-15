@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../shared/application/activity-recorder.js";
+import type { Notifier } from "../../../../shared/application/notifier.js";
 import type { EventBus } from "../../../../shared/application/event-bus.js";
 import type { UseCase } from "../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../shared/domain/clock.js";
@@ -36,6 +37,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
     private readonly events: EventBus,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async execute(input: RegisterAccountInput): Promise<AuthResult> {
@@ -52,7 +54,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
     const { betaAccess } = await this.policy.assertCanRegister(phone.value, email?.value);
 
     const account = Account.register({
-      role: input.role,
+      roles: [input.role],
       fullName,
       phone,
       email,
@@ -66,11 +68,28 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
       actorId: account.id.value,
       category: "AUTH",
       action: "identity.account_registered",
-      summary:
-        account.role === "CATECHIST"
-          ? "Criou uma conta de catequista (por aprovar)"
-          : "Criou uma conta no portal",
+      summary: account.hasRole("CATECHIST")
+        ? "Criou uma conta de catequista (por aprovar)"
+        : "Criou uma conta no portal",
     });
+
+    await this.notifier.notify(
+      account.hasRole("CATECHIST")
+        ? {
+            to: { permission: "APPROVE_CATECHISTS" },
+            kind: "identity.catechist_requested",
+            title: "Novo pedido de catequista",
+            body: `${account.fullName.value} criou uma conta de catequista e aguarda aprovação.`,
+            link: "/dashboard/catequistas",
+          }
+        : {
+            to: { permission: "SUPER_ADMIN" },
+            kind: "identity.account_registered",
+            title: "Nova conta no portal",
+            body: `${account.fullName.value} criou uma conta.`,
+            link: `/admin/utilizadores/${account.id.value}`,
+          },
+    );
 
     const { result } = await this.sessions.open(account, input.userAgent);
     return result;

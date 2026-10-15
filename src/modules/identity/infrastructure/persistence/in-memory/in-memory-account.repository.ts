@@ -1,3 +1,4 @@
+import type { AccountRole, Permission } from "../../../domain/account-role.js";
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { Account } from "../../../domain/account.js";
 import {
@@ -16,6 +17,14 @@ export class InMemoryAccountRepository extends AccountRepository {
 
   async findById(id: UniqueId) {
     return this.items.get(id.value) ?? null;
+  }
+
+  async findByIds(ids: UniqueId[]) {
+    return ids.flatMap((id) => this.items.get(id.value) ?? []);
+  }
+
+  async findByRole(role: AccountRole) {
+    return [...this.items.values()].filter((item) => item.hasRole(role));
   }
 
   async findByEmail(email: Email) {
@@ -42,7 +51,7 @@ export class InMemoryAccountRepository extends AccountRepository {
         ) {
           return false;
         }
-        if (query.role && account.role !== query.role) return false;
+        if (query.role && !account.hasRole(query.role)) return false;
         if (query.status === "active" && account.isBlocked) return false;
         if (query.status === "blocked" && !account.isBlocked) return false;
         if (query.status === "pending_approval" && account.approval !== "PENDING") return false;
@@ -68,6 +77,13 @@ export class InMemoryAccountRepository extends AccountRepository {
       admins: all.filter((item) => item.isSuperAdmin).length,
       testers: all.filter((item) => item.betaAccess).length,
     };
+  }
+
+  async findActiveWithAnyPermission(permissions: Permission[]) {
+    return [...this.items.values()].filter(
+      (item) =>
+        !item.isBlocked && item.permissions.some((permission) => permissions.includes(permission)),
+    );
   }
 
   async countActiveSuperAdmins(exceptId: UniqueId) {

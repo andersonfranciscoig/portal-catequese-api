@@ -1,3 +1,4 @@
+import type { AccountRole, Permission } from "../../../domain/account-role.js";
 import { Injectable } from "@nestjs/common";
 
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
@@ -22,6 +23,22 @@ export class PrismaAccountRepository extends AccountRepository {
   async findById(id: UniqueId) {
     const row = await this.prisma.account.findUnique({ where: { id: id.value } });
     return row ? AccountMapper.toDomain(row) : null;
+  }
+
+  async findByIds(ids: UniqueId[]) {
+    if (!ids.length) return [];
+    const rows = await this.prisma.account.findMany({
+      where: { id: { in: ids.map((id) => id.value) } },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
+  }
+
+  async findByRole(role: AccountRole) {
+    const rows = await this.prisma.account.findMany({
+      where: { roles: { has: role } },
+      orderBy: { fullName: "asc" },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
   }
 
   async findByEmail(email: Email) {
@@ -66,6 +83,13 @@ export class PrismaAccountRepository extends AccountRepository {
     return { total, blocked, pendingCatechists, coordination, admins, testers };
   }
 
+  async findActiveWithAnyPermission(permissions: Permission[]) {
+    const rows = await this.prisma.account.findMany({
+      where: { status: "ACTIVE", permissions: { hasSome: permissions } },
+    });
+    return rows.map((row) => AccountMapper.toDomain(row));
+  }
+
   countActiveSuperAdmins(exceptId: UniqueId) {
     return this.prisma.account.count({
       where: { permissions: { has: "SUPER_ADMIN" }, status: "ACTIVE", id: { not: exceptId.value } },
@@ -85,7 +109,7 @@ export class PrismaAccountRepository extends AccountRepository {
         ],
       });
     }
-    if (query.role) and.push({ role: query.role });
+    if (query.role) and.push({ roles: { has: query.role } });
     if (query.status === "active") and.push({ status: "ACTIVE" });
     if (query.status === "blocked") and.push({ status: "BLOCKED" });
     if (query.status === "pending_approval") and.push({ approval: "PENDING" });

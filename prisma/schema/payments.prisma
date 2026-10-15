@@ -1,0 +1,84 @@
+// Módulo dos pagamentos: taxas de matrícula e de confirmação, contas da paróquia,
+// comprovativos de transferência e numerário registado pela coordenação.
+
+enum PaymentPurpose {
+  ENROLLMENT
+  CONFIRMATION
+
+  @@schema("payments")
+}
+
+enum PaymentMethod {
+  /// Pagamento por referência (Multicaixa Express): ainda não disponível.
+  EXPRESS_REFERENCE
+  BANK_TRANSFER
+  CASH
+
+  @@schema("payments")
+}
+
+enum PaymentStatus {
+  AWAITING_PAYMENT
+  UNDER_REVIEW
+  PAID
+  REJECTED
+
+  @@schema("payments")
+}
+
+/// Preços em vigor (kwanzas).
+model PaymentSettings {
+  id                String   @id
+  enrollmentPrice   Int      @map("enrollment_price")
+  confirmationPrice Int      @map("confirmation_price")
+  updatedAt         DateTime @map("updated_at") @db.Timestamptz(3)
+  updatedBy         String?  @map("updated_by") @db.Uuid
+
+  @@map("settings")
+  @@schema("payments")
+}
+
+model BankAccount {
+  id            String   @id @db.Uuid
+  bank          String
+  holder        String
+  accountNumber String   @map("account_number")
+  iban          String
+  active        Boolean  @default(true)
+  createdAt     DateTime @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @map("updated_at") @db.Timestamptz(3)
+
+  @@map("bank_accounts")
+  @@schema("payments")
+}
+
+model Payment {
+  id                       String         @id @db.Uuid
+  /// Matrícula a que respeita (módulo da catequese; sem chave estrangeira).
+  enrollmentId             String         @unique @map("enrollment_id") @db.Uuid
+  enrollmentCode           String         @map("enrollment_code")
+  catechumenName           String         @map("catechumen_name")
+  purpose                  PaymentPurpose
+  amount                   Int
+  status                   PaymentStatus
+  method                   PaymentMethod?
+  /// Contas que podem ver e pagar (o encarregado, o próprio adulto).
+  payerAccountIds          String[]       @map("payer_account_ids") @db.Uuid
+  proofFileKey             String?        @map("proof_file_key")
+  proofFileName            String?        @map("proof_file_name")
+  proofFileSize            Int?           @map("proof_file_size")
+  proofContentType         String?        @map("proof_content_type")
+  proofBankAccountId       String?        @map("proof_bank_account_id") @db.Uuid
+  proofSubmittedAt         DateTime?      @map("proof_submitted_at") @db.Timestamptz(3)
+  paidAt                   DateTime?      @map("paid_at") @db.Timestamptz(3)
+  reviewNote               String?        @map("review_note")
+  reviewedBy               String?        @map("reviewed_by") @db.Uuid
+  registeredByCoordination Boolean        @default(false) @map("registered_by_coordination")
+  createdAt                DateTime       @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime       @map("updated_at") @db.Timestamptz(3)
+
+  @@index([enrollmentCode])
+  @@index([status, createdAt])
+  @@map("payments")
+  @@schema("payments")
+}

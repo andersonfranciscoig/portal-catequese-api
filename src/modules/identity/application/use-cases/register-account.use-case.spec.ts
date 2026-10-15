@@ -17,7 +17,7 @@ describe("RegisterAccountUseCase", () => {
     const result = await ctx.register.execute(guardianInput);
 
     expect(result.account).toMatchObject({
-      role: "GUARDIAN",
+      roles: ["GUARDIAN"],
       fullName: "Anderson Francisco",
       phone: "+244923482117",
       email: "anderson.francisco@gmail.com",

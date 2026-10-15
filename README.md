@@ -9,11 +9,14 @@ NestJS + TypeScript, PostgreSQL com Prisma, testes com Vitest.
 independente dos outros. Se um dia for preciso, um módulo sai para um
 microserviço sem reescrever os restantes.
 
-| Módulo     | Responsabilidade                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| `identity` | contas, sessões, permissões, perfil e administração das contas                              |
-| `platform` | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
-| `audit`    | registo de atividade (quem fez o quê e quando)                                              |
+| Módulo          | Responsabilidade                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `identity`      | contas, sessões, permissões, perfil e administração das contas                              |
+| `platform`      | fase de lançamento (testes / aberto a todos), portal aberto ou encerrado, pedidos de acesso |
+| `audit`         | registo de atividade (quem fez o quê e quando)                                              |
+| `notifications` | avisos dentro do portal (o sino) para cada conta                                            |
+| `catechesis`    | ano catequético, catequizandos, matrículas, turmas, presenças e avaliações                  |
+| `payments`      | taxas de matrícula e confirmação, comprovativos, numerário, preços e contas da paróquia     |
 
 ```
 src/
@@ -50,6 +53,11 @@ Regras (verificadas pelo ESLint em `eslint.config.js`):
   - `LaunchAccessPolicy`: o `identity` pergunta se alguém pode entrar; o
     `platform` responde. O `identity` não depende do `platform`.
   - `ActivityRecorder`: todos registam atividade; o `audit` guarda-a.
+  - `Notifier`: todos notificam; o `notifications` resolve os destinatários
+    (contas ou quem tem uma permissão) e guarda os avisos. Uma falha a
+    notificar só fica no log: nunca anula a ação.
+  - `PeopleDirectory`: o `catechesis` pergunta nomes, contactos e papéis das
+    contas; o `identity` responde. Entre esquemas só se guardam ids.
   - evento `platform.access_request_approved`: o `identity` dá acesso de testes
     às contas com esse contacto.
 
@@ -64,6 +72,7 @@ pnpm db:up                    # PostgreSQL 16 na porta 5433
 pnpm db:migrate               # cria as tabelas
 pnpm db:seed                  # primeira administração + configuração da plataforma
 pnpm start:dev                # http://localhost:3333/api/v1
+                              # documentação: http://localhost:3333/docs
 ```
 
 ## Scripts
@@ -101,6 +110,11 @@ Erros: `{ statusCode, code, message }` com códigos estáveis (ex.:
 | `GET`   | `/auth/me`          | conta autenticada                                                      |
 | `PATCH` | `/auth/me`          | altera nome, telefone, email                                           |
 | `POST`  | `/auth/me/password` | muda a palavra-passe                                                   |
+| `POST`  | `/auth/me/roles`    | acrescenta um papel à própria conta (catequista fica por aprovar)      |
+
+Papéis: uma conta pode ter vários (`GUARDIAN`, `CATECHUMEN`, `CATECHIST`) — por
+exemplo, um catequista que também é encarregado de educação. O papel de
+catequista precisa de aprovação.
 
 Regras de entrada: conta bloqueada não entra; portal encerrado → só a
 administração; fase de testes → só contas com acesso de testes e a
@@ -124,6 +138,7 @@ administração. A renovação da sessão volta a verificar estas regras.
 | `POST` | `/admin/accounts/:id/block`                    | bloqueia (com motivo) e termina as sessões                                           |
 | `POST` | `/admin/accounts/:id/unblock`                  | desbloqueia                                                                          |
 | `POST` | `/admin/accounts/:id/catechist-decision`       | aprova/recusa um catequista                                                          |
+| `PUT`  | `/admin/accounts/:id/roles`                    | define os papéis (catequista acrescentado fica aprovado)                             |
 | `PUT`  | `/admin/accounts/:id/beta-access`              | dá/retira acesso de testes                                                           |
 | `GET`  | `/admin/platform/status`                       | estado completo + pedidos por decidir                                                |
 | `PUT`  | `/admin/platform/launch`                       | `BETA` ou `PUBLIC` (abrir a todos)                                                   |
@@ -139,6 +154,156 @@ pedido: uma permissão retirada ou uma conta bloqueada deixam logo de valer.
 
 Salvaguardas: a administração não se pode bloquear nem retirar a si própria, e
 há sempre pelo menos uma administração ativa.
+
+### Notificações (`notifications`)
+
+| Método | Rota                         | Descrição                                                        |
+| ------ | ---------------------------- | ---------------------------------------------------------------- |
+| `GET`  | `/me/notifications`          | as mais recentes e quantas por ler (`unread`, `limit`, `before`) |
+| `POST` | `/me/notifications/:id/read` | marca uma como lida                                              |
+| `POST` | `/me/notifications/read-all` | marca todas como lidas                                           |
+
+Quem é avisado e quando:
+
+| Acontecimento                                            | Quem recebe                      |
+| -------------------------------------------------------- | -------------------------------- |
+| Conta nova                                               | administração                    |
+| Conta de catequista ou pedido "também sou catequista"    | quem aprova catequistas          |
+| Pedido de acesso à fase de testes                        | administração                    |
+| Catequista aprovado / recusado / dado pela administração | a pessoa                         |
+| Papéis ou acessos alterados, conta desbloqueada          | a pessoa                         |
+| Matrícula submetida no portal                            | coordenação                      |
+| Matrícula confirmada (com a turma) ou recusada           | encarregado, ou o próprio adulto |
+| Turma atribuída ou retirada                              | o catequista                     |
+| Falta num encontro (só a primeira vez)                   | encarregado, ou o próprio adulto |
+
+Quem fez a ação nunca é notificado dela.
+
+### Catequese (`catechesis`)
+
+Portal da família — encarregado (educandos menores) ou adulto (o próprio):
+
+| Método | Rota                                             | Descrição                                                                                         |
+| ------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `GET`  | `/me/family`                                     | educandos (ou o próprio) com a matrícula e a turma do ano, e todas as matrículas                  |
+| `GET`  | `/me/enrollments`                                | todas as matrículas da família                                                                    |
+| `GET`  | `/me/catechumens/:id`                            | perfil: matrícula, turma, sacramentos e presenças do ano                                          |
+| `POST` | `/me/enrollments`                                | matrícula (`guardian` presente = educando menor; sem ele = o próprio adulto; `documentsInPerson`) |
+| `GET`  | `/me/enrollments/:id/documents`                  | documentos enviados                                                                               |
+| `POST` | `/me/enrollments/:id/documents`                  | anexa um documento (`multipart`: `kind` = `ID`, `BAPTISM` ou `PHOTO`, `file`)                     |
+| `GET`  | `/me/enrollments/:id/documents/:documentId/file` | abre o documento                                                                                  |
+| `GET`  | `/me/confirmations`                              | anos concluídos: pode confirmar, já confirmou ou terminou o percurso                              |
+| `POST` | `/me/confirmations`                              | confirma no novo ano (nível seguinte ou o mesmo, se repete); fica aprovada                        |
+
+Portal do catequista (papel de catequista aprovado), sempre a turma do ano em curso:
+
+| Método | Rota                                   | Descrição                                             |
+| ------ | -------------------------------------- | ----------------------------------------------------- |
+| `GET`  | `/me/catechist/class`                  | turma, catequizandos e encontros já realizados        |
+| `GET`  | `/me/catechist/class/attendance/:date` | chamada de um encontro                                |
+| `PUT`  | `/me/catechist/class/attendance/:date` | lança/corrige a chamada (todos os catequizandos)      |
+| `GET`  | `/me/catechist/class/evaluations`      | pauta: notas por trimestre, presença, sugestão        |
+| `PUT`  | `/me/catechist/class/evaluations`      | guarda notas (0–20) e decisões                        |
+| `GET`  | `/me/catechist/class/catechumens/:id`  | ficha: presenças, avaliação e contacto do encarregado |
+
+Coordenação (permissão `COORDINATION`):
+
+| Método | Rota                                                       | Descrição                                                                                                         |
+| ------ | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/coordination/calendar`                                   | ano catequético em curso                                                                                          |
+| `PUT`  | `/coordination/calendar`                                   | define o ano e as datas da catequese                                                                              |
+| `GET`  | `/coordination/classes`                                    | turmas do ano (catequistas, inscritos, próximo encontro)                                                          |
+| `POST` | `/coordination/classes`                                    | cria uma turma                                                                                                    |
+| `PUT`  | `/coordination/classes/:id/catechists`                     | catequistas da turma (aprovados, um principal)                                                                    |
+| `GET`  | `/coordination/enrollments`                                | matrículas do ano (`tab`, `search`, `stage`, `type`, `sort`, `page`, `pageSize`) com os números de cada separador |
+| `GET`  | `/coordination/enrollments/:id`                            | detalhe: dados, encarregado, documentos, histórico e turmas possíveis                                             |
+| `POST` | `/coordination/enrollments/:id/actions`                    | `approve`, `request-documents`, `confirm` (turma do mesmo nível, com lugar), `reject`, `waitlist`, `reopen`       |
+| `GET`  | `/coordination/enrollments/:id/documents/:documentId/file` | abre um documento                                                                                                 |
+| `GET`  | `/coordination/confirmations`                              | procura matrículas do ano anterior (`search`)                                                                     |
+| `POST` | `/coordination/confirmations`                              | confirma em nome da família                                                                                       |
+
+Regras: uma matrícula por catequizando em cada ano; menores são inscritos pelo
+encarregado e adultos (18+) por si; os encontros são semanais (sábado ou
+domingo, conforme o período) entre o início e o fim do ano, e só se lançam
+presenças de encontros que já aconteceram. O seed cria o ano 2026/2027.
+
+Gestão da coordenação (permissão `COORDINATION`):
+
+| Método         | Rota                                                  | Descrição                                                                     |
+| -------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`          | `/coordination/overview`                              | resumo do ano: números, evolução, distribuição, o que pede atenção, atividade |
+| `PUT`          | `/coordination/calendar/deadlines/:purpose`           | prazo das famílias (`ENROLLMENT` ou `CONFIRMATION`); `null` retira            |
+| `GET`          | `/coordination/years`                                 | anos com turmas                                                               |
+| `GET`          | `/coordination/classes?year=`                         | turmas de um ano                                                              |
+| `GET`          | `/coordination/classes/:id`                           | turma: catequizandos e presenças por encontro                                 |
+| `GET`          | `/coordination/classes/:id/results`                   | pauta final                                                                   |
+| `GET`          | `/coordination/classes/plan`                          | turmas precisas num nível (`level`, `capacity`)                               |
+| `POST`         | `/coordination/classes/generate`                      | cria as que faltam, coloca os aprovados e atribui catequistas                 |
+| `GET`          | `/coordination/catechists`                            | catequistas por estado (`tab`, `search`)                                      |
+| `GET`          | `/coordination/catechists/:id`                        | perfil com as turmas de cada ano                                              |
+| `PUT`          | `/coordination/catechists/:id/status`                 | em formação, indisponível ou inativo                                          |
+| `GET` · `POST` | `/coordination/catechist-applications(/:id/decision)` | candidaturas (com `APPROVE_CATECHISTS`)                                       |
+| `GET`          | `/coordination/attendance` · `/:date`                 | dias de encontro; turmas, chamadas e presença do catequista                   |
+| `PUT`          | `/coordination/attendance/:date/catechists/:classId`  | presença do catequista                                                        |
+| `GET`          | `/coordination/catechumens` · `/:id`                  | catequizandos do ano; ficha com o percurso                                    |
+
+Sacramentos e relatórios (coordenação):
+
+| Método | Rota                                                                                | Descrição                                                                     |
+| ------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `GET`  | `/coordination/sacraments`                                                          | celebrações do ano, candidatos e quantos estão prontos                        |
+| `PUT`  | `/coordination/sacraments/:type/celebration`                                        | data e local da celebração (`null` volta aos por omissão)                     |
+| `GET`  | `/coordination/sacraments/:type/candidates`                                         | candidatos e requisitos (`search`, `filter`: `ALL` · `READY` · `PENDING`)     |
+| `PUT`  | `/coordination/sacraments/:type/candidates/:catechumenId/requirements/:requirement` | marca um requisito entregue (`{ met }`)                                       |
+| `GET`  | `/coordination/reports`                                                             | indicadores do ano (pagamentos só com `FINANCE`)                              |
+| `GET`  | `/coordination/reports/exports/:kind`                                               | CSV: `catechumens`, `classes`, `catechist-attendance`, `payments` (`FINANCE`) |
+
+Candidatos: o último ano da etapa (`BAPTISM_3`, `COMMUNION_3`, `CONFIRMATION_3`) com a matrícula aceite. O batismo e a Primeira Comunhão vêm do percurso; as certidões contam sozinhas quando a família as envia online; o resto marca a coordenação. Sem data marcada, o Batismo fica na Vigília Pascal.
+
+Público (sem conta):
+
+| Método | Rota                        | Descrição                                                                           |
+| ------ | --------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`  | `/catechesis/calendar`      | ano catequético e prazos                                                            |
+| `GET`  | `/public/enrollments/:code` | estado da matrícula pelo número (só primeiro nome e inicial; 20 pedidos/min por IP) |
+
+Os prazos aplicam-se às famílias; a coordenação com `LATE_ENROLLMENT` confirma fora do prazo.
+
+### Pagamentos (`payments`)
+
+Cada matrícula ou confirmação submetida gera a taxa a pagar (evento
+`catechesis.enrollment_submitted`), com o preço em vigor. A família paga por
+transferência (anexa o comprovativo) ou em numerário na secretaria (a
+coordenação regista). O pagamento online (Multicaixa Express) fica para quando
+houver gateway.
+
+| Método                    | Rota                                                  | Descrição                                                                              |
+| ------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`                     | `/me/payments`                                        | pagamentos da família                                                                  |
+| `GET`                     | `/me/payments/by-enrollment/:code`                    | pagamento de uma matrícula                                                             |
+| `GET`                     | `/payments/bank-accounts`                             | contas da paróquia ativas                                                              |
+| `POST`                    | `/me/payments/:id/proof`                              | comprovativo (`multipart`: `bankAccountId`, `file`)                                    |
+| `GET`                     | `/me/payments/:id/proof`                              | abre o comprovativo enviado                                                            |
+| `GET`                     | `/finance/payments`                                   | coordenação + `FINANCE`: pagamentos (`status`, `method`, `purpose`, `search`) e resumo |
+| `GET`                     | `/finance/payments/:id/proof`                         | abre o comprovativo                                                                    |
+| `POST`                    | `/finance/payments/:id/approve` · `/reject` · `/cash` | valida, recusa (com motivo) ou regista numerário                                       |
+| `GET`                     | `/finance/settings`                                   | preços e contas                                                                        |
+| `PUT`                     | `/finance/prices/:purpose`                            | preço da matrícula ou da confirmação                                                   |
+| `POST` · `PUT` · `DELETE` | `/finance/bank-accounts(/:id)`                        | contas da paróquia                                                                     |
+
+### Ficheiros (UploadThing)
+
+Documentos e comprovativos vão para o UploadThing (`STORAGE_PROVIDER=uploadthing`,
+`UPLOADTHING_TOKEN`); em desenvolvimento sem conta, `STORAGE_PROVIDER=memory`.
+
+- Só PDF, JPG, PNG ou WEBP, verificados pelo conteúdo (não pelo nome), até
+  `UPLOAD_MAX_BYTES` (5 MB).
+- A base de dados guarda só a chave do ficheiro. O browser nunca recebe o
+  endereço: pede o ficheiro à API, que confirma o acesso e o devolve
+  (`Cache-Control: private, no-store`).
+- No plano gratuito do UploadThing os ficheiros não podem ser privados (ficam
+  com endereço aleatório, que nunca é divulgado). Num plano pago, defina
+  `UPLOADTHING_ACL=private`.
 
 Proteger rotas noutro módulo:
 

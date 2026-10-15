@@ -1,0 +1,734 @@
+import { Injectable } from "@nestjs/common";
+
+import { UniqueId } from "../../../../../shared/domain/unique-id.js";
+import type {
+  CatechesisClass as ClassRow,
+  ClassCatechist as ClassCatechistRow,
+  Catechumen as CatechumenRow,
+  Enrollment as EnrollmentRow,
+  EnrollmentDocument as EnrollmentDocumentRow,
+  Prisma,
+} from "../../../../../shared/infrastructure/database/generated/client.js";
+import { PrismaService } from "../../../../../shared/infrastructure/database/prisma.service.js";
+import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
+import { CatechesisClass } from "../../../domain/catechesis-class.js";
+import type { CatechistPresence, CatechistProfile } from "../../../domain/catechist-records.js";
+import { Catechumen } from "../../../domain/catechumen.js";
+import type { ClassAttendance } from "../../../domain/class-attendance.js";
+import type { AllowedContentType } from "../../../../../shared/application/file-storage.js";
+import type { EnrollmentStatus } from "../../../domain/catechesis.js";
+import { Enrollment, type EnrollmentEvent } from "../../../domain/enrollment.js";
+import { EnrollmentDocument } from "../../../domain/enrollment-document.js";
+import type { Evaluation } from "../../../domain/evaluation.js";
+import type {
+  RequirementCheck,
+  SacramentCelebration,
+  SacramentType,
+} from "../../../domain/sacraments.js";
+import {
+  AttendanceRepository,
+  CalendarRepository,
+  CatechistPresenceRepository,
+  CatechistProfileRepository,
+  CatechumenRepository,
+  ClassRepository,
+  EnrollmentDocumentRepository,
+  EnrollmentRepository,
+  EvaluationRepository,
+  type EnrollmentQuery,
+  SacramentRepository,
+} from "../../../domain/repositories/catechesis.repositories.js";
+
+const CALENDAR_ID = CatecheticalCalendar.ID.value;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Ids que não são UUID nunca existem (e a base de dados recusá-los-ia). */
+const validIds = (ids: string[]) => [...new Set(ids)].filter((id) => UUID.test(id));
+const orUndefined = <T>(value: T | null) => value ?? undefined;
+
+@Injectable()
+export class PrismaCalendarRepository extends CalendarRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async get() {
+    const row = await this.prisma.catecheticalCalendar.findUnique({ where: { id: CALENDAR_ID } });
+    return row
+      ? CatecheticalCalendar.restore({
+          label: row.label,
+          startsOn: row.startsOn,
+          endsOn: row.endsOn,
+          updatedAt: row.updatedAt,
+          updatedBy: orUndefined(row.updatedBy),
+          windows: {
+            ...(row.enrollmentStartsOn && row.enrollmentEndsOn
+              ? { ENROLLMENT: { startsOn: row.enrollmentStartsOn, endsOn: row.enrollmentEndsOn } }
+              : {}),
+            ...(row.confirmationStartsOn && row.confirmationEndsOn
+              ? {
+                  CONFIRMATION: {
+                    startsOn: row.confirmationStartsOn,
+                    endsOn: row.confirmationEndsOn,
+                  },
+                }
+              : {}),
+          },
+        })
+      : null;
+  }
+
+  async save(calendar: CatecheticalCalendar) {
+    const data = {
+      label: calendar.label,
+      startsOn: calendar.startsOn,
+      endsOn: calendar.endsOn,
+      updatedAt: calendar.updatedAt,
+      updatedBy: calendar.updatedBy ?? null,
+      enrollmentStartsOn: calendar.windows.ENROLLMENT?.startsOn ?? null,
+      enrollmentEndsOn: calendar.windows.ENROLLMENT?.endsOn ?? null,
+      confirmationStartsOn: calendar.windows.CONFIRMATION?.startsOn ?? null,
+      confirmationEndsOn: calendar.windows.CONFIRMATION?.endsOn ?? null,
+    };
+    await this.prisma.catecheticalCalendar.upsert({
+      where: { id: CALENDAR_ID },
+      create: { id: CALENDAR_ID, ...data },
+      update: data,
+    });
+  }
+}
+
+function toCatechumen(row: CatechumenRow) {
+  return Catechumen.restore(
+    {
+      fullName: row.fullName,
+      birthDate: row.birthDate,
+      gender: row.gender,
+      address: orUndefined(row.address),
+      baptized: row.baptized,
+      firstCommunion: row.firstCommunion,
+      guardianAccountId: orUndefined(row.guardianAccountId),
+      guardianRelationship: orUndefined(row.guardianRelationship),
+      accountId: orUndefined(row.accountId),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+@Injectable()
+export class PrismaCatechumenRepository extends CatechumenRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.catechumen.findUnique({ where: { id: id.value } });
+    return row ? toCatechumen(row) : null;
+  }
+
+  async findByIds(ids: string[]) {
+    const rows = await this.prisma.catechumen.findMany({ where: { id: { in: validIds(ids) } } });
+    return rows.map(toCatechumen);
+  }
+
+  async findAccessibleBy(accountId: string) {
+    if (!UUID.test(accountId)) return [];
+    const rows = await this.prisma.catechumen.findMany({
+      where: { OR: [{ guardianAccountId: accountId }, { accountId }] },
+      orderBy: { fullName: "asc" },
+    });
+    return rows.map(toCatechumen);
+  }
+
+  async save(catechumen: Catechumen) {
+    const data = {
+      fullName: catechumen.fullName,
+      birthDate: catechumen.birthDate,
+      gender: catechumen.gender,
+      address: catechumen.address ?? null,
+      baptized: catechumen.baptized,
+      firstCommunion: catechumen.firstCommunion,
+      guardianAccountId: catechumen.guardianAccountId ?? null,
+      guardianRelationship: catechumen.guardianRelationship ?? null,
+      accountId: catechumen.accountId ?? null,
+      updatedAt: catechumen.updatedAt,
+    };
+    await this.prisma.catechumen.upsert({
+      where: { id: catechumen.id.value },
+      create: { id: catechumen.id.value, createdAt: catechumen.createdAt, ...data },
+      update: data,
+    });
+  }
+}
+
+function toEnrollment(row: EnrollmentRow) {
+  return Enrollment.restore(
+    {
+      code: row.code,
+      catechumenId: row.catechumenId,
+      catecheticalYear: row.catecheticalYear,
+      level: row.level,
+      type: row.type,
+      status: row.status,
+      preferredSlot: row.preferredSlot,
+      previousParish: orUndefined(row.previousParish),
+      notes: orUndefined(row.notes),
+      submittedBy: row.submittedBy,
+      submittedAt: row.submittedAt,
+      classId: orUndefined(row.classId),
+      decidedBy: orUndefined(row.decidedBy),
+      decidedAt: orUndefined(row.decidedAt),
+      updatedAt: row.updatedAt,
+      documentsInPerson: row.documentsInPerson,
+      reviewNote: orUndefined(row.reviewNote),
+      previousEnrollmentId: orUndefined(row.previousEnrollmentId),
+      history: readHistory(row.history),
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+interface StoredEvent {
+  status: EnrollmentStatus;
+  at: string;
+  actorId?: string;
+  note?: string;
+}
+
+function readHistory(value: Prisma.JsonValue): EnrollmentEvent[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown as StoredEvent[]).map((event) => ({
+    status: event.status,
+    at: new Date(event.at),
+    actorId: event.actorId,
+    note: event.note,
+  }));
+}
+
+function writeHistory(history: readonly EnrollmentEvent[]): Prisma.InputJsonValue {
+  return history.map((event) => ({
+    status: event.status,
+    at: event.at.toISOString(),
+    ...(event.actorId ? { actorId: event.actorId } : {}),
+    ...(event.note ? { note: event.note } : {}),
+  }));
+}
+
+@Injectable()
+export class PrismaEnrollmentRepository extends EnrollmentRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.enrollment.findUnique({ where: { id: id.value } });
+    return row ? toEnrollment(row) : null;
+  }
+
+  async findForCatechumen(catechumenId: string, catecheticalYear: string) {
+    if (!UUID.test(catechumenId)) return null;
+    const row = await this.prisma.enrollment.findUnique({
+      where: { catechumenId_catecheticalYear: { catechumenId, catecheticalYear } },
+    });
+    return row ? toEnrollment(row) : null;
+  }
+
+  async listForCatechumens(catechumenIds: string[]) {
+    const rows = await this.prisma.enrollment.findMany({
+      where: { catechumenId: { in: validIds(catechumenIds) } },
+      orderBy: { submittedAt: "desc" },
+    });
+    return rows.map(toEnrollment);
+  }
+
+  async list({ catecheticalYear, status }: EnrollmentQuery) {
+    const rows = await this.prisma.enrollment.findMany({
+      where: { catecheticalYear, status },
+      orderBy: { submittedAt: "desc" },
+    });
+    return rows.map(toEnrollment);
+  }
+
+  async listConfirmedInClass(classId: string) {
+    if (!UUID.test(classId)) return [];
+    const rows = await this.prisma.enrollment.findMany({
+      where: { classId, status: "CONFIRMED" },
+    });
+    return rows.map(toEnrollment);
+  }
+
+  async countConfirmedInClass(classId: string) {
+    if (!UUID.test(classId)) return 0;
+    return this.prisma.enrollment.count({ where: { classId, status: "CONFIRMED" } });
+  }
+
+  async findByCode(code: string) {
+    const row = await this.prisma.enrollment.findUnique({ where: { code } });
+    return row ? toEnrollment(row) : null;
+  }
+
+  async codeExists(code: string) {
+    return (await this.prisma.enrollment.count({ where: { code } })) > 0;
+  }
+
+  async save(enrollment: Enrollment) {
+    const data = {
+      status: enrollment.status,
+      level: enrollment.level,
+      type: enrollment.type,
+      preferredSlot: enrollment.preferredSlot,
+      previousParish: enrollment.previousParish ?? null,
+      notes: enrollment.notes ?? null,
+      classId: enrollment.classId ?? null,
+      decidedBy: enrollment.decidedBy ?? null,
+      decidedAt: enrollment.decidedAt ?? null,
+      updatedAt: enrollment.updatedAt,
+      documentsInPerson: enrollment.documentsInPerson,
+      reviewNote: enrollment.reviewNote ?? null,
+      history: writeHistory(enrollment.history),
+    };
+    await this.prisma.enrollment.upsert({
+      where: { id: enrollment.id.value },
+      create: {
+        id: enrollment.id.value,
+        code: enrollment.code,
+        catechumenId: enrollment.catechumenId,
+        catecheticalYear: enrollment.catecheticalYear,
+        submittedBy: enrollment.submittedBy,
+        submittedAt: enrollment.submittedAt,
+        previousEnrollmentId: enrollment.previousEnrollmentId ?? null,
+        ...data,
+      },
+      update: data,
+    });
+  }
+}
+
+function toClass(row: ClassRow & { catechists: ClassCatechistRow[] }) {
+  return CatechesisClass.restore(
+    {
+      catecheticalYear: row.catecheticalYear,
+      level: row.level,
+      section: row.section,
+      slot: row.slot,
+      startTime: orUndefined(row.startTime),
+      room: row.room,
+      capacity: row.capacity,
+      catechists: row.catechists.map((item) => ({ accountId: item.accountId, role: item.role })),
+      createdAt: row.createdAt,
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+const withCatechists = { catechists: true } as const;
+
+@Injectable()
+export class PrismaClassRepository extends ClassRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.catechesisClass.findUnique({
+      where: { id: id.value },
+      include: withCatechists,
+    });
+    return row ? toClass(row) : null;
+  }
+
+  async findByIds(ids: string[]) {
+    const rows = await this.prisma.catechesisClass.findMany({
+      where: { id: { in: validIds(ids) } },
+      include: withCatechists,
+    });
+    return rows.map(toClass);
+  }
+
+  async listByYear(catecheticalYear: string) {
+    const rows = await this.prisma.catechesisClass.findMany({
+      where: { catecheticalYear },
+      include: withCatechists,
+      orderBy: [{ level: "asc" }, { section: "asc" }],
+    });
+    return rows.map(toClass);
+  }
+
+  async listForCatechist(accountId: string) {
+    if (!UUID.test(accountId)) return [];
+    const rows = await this.prisma.catechesisClass.findMany({
+      where: { catechists: { some: { accountId } } },
+      include: withCatechists,
+      orderBy: { catecheticalYear: "desc" },
+    });
+    return rows.map(toClass);
+  }
+
+  async listYears() {
+    const rows = await this.prisma.catechesisClass.findMany({
+      distinct: ["catecheticalYear"],
+      select: { catecheticalYear: true },
+      orderBy: { catecheticalYear: "desc" },
+    });
+    return rows.map((row) => row.catecheticalYear);
+  }
+
+  async findForCatechist(accountId: string, catecheticalYear: string) {
+    if (!UUID.test(accountId)) return null;
+    const row = await this.prisma.catechesisClass.findFirst({
+      where: { catecheticalYear, catechists: { some: { accountId } } },
+      include: withCatechists,
+    });
+    return row ? toClass(row) : null;
+  }
+
+  async exists(catecheticalYear: string, level: string, section: string) {
+    const count = await this.prisma.catechesisClass.count({
+      where: { catecheticalYear, level: level as ClassRow["level"], section },
+    });
+    return count > 0;
+  }
+
+  async save(klass: CatechesisClass) {
+    const data = {
+      level: klass.level,
+      section: klass.section,
+      slot: klass.slot,
+      startTime: klass.startTime ?? null,
+      room: klass.room,
+      capacity: klass.capacity,
+    };
+    // A turma e os catequistas mudam juntos (ou nada muda).
+    await this.prisma.$transaction([
+      this.prisma.catechesisClass.upsert({
+        where: { id: klass.id.value },
+        create: {
+          id: klass.id.value,
+          catecheticalYear: klass.catecheticalYear,
+          createdAt: klass.createdAt,
+          ...data,
+        },
+        update: data,
+      }),
+      this.prisma.classCatechist.deleteMany({ where: { classId: klass.id.value } }),
+      this.prisma.classCatechist.createMany({
+        data: klass.catechists.map((item) => ({
+          classId: klass.id.value,
+          accountId: item.accountId,
+          role: item.role,
+        })),
+      }),
+    ]);
+  }
+}
+
+@Injectable()
+export class PrismaAttendanceRepository extends AttendanceRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listForClass(classId: string) {
+    if (!UUID.test(classId)) return [];
+    const rows = await this.prisma.attendanceRecord.findMany({
+      where: { classId },
+      orderBy: { date: "asc" },
+    });
+    const sheets = new Map<string, ClassAttendance>();
+    for (const row of rows) {
+      const sheet = sheets.get(row.date) ?? {
+        classId,
+        date: row.date,
+        marks: [],
+        recordedBy: row.recordedBy,
+        recordedAt: row.recordedAt,
+      };
+      sheet.marks.push({ catechumenId: row.catechumenId, status: row.status });
+      sheets.set(row.date, sheet);
+    }
+    return [...sheets.values()];
+  }
+
+  async listForCatechumen(classId: string, catechumenId: string) {
+    if (!UUID.test(classId) || !UUID.test(catechumenId)) return [];
+    const rows = await this.prisma.attendanceRecord.findMany({
+      where: { classId, catechumenId },
+      orderBy: { date: "asc" },
+      select: { date: true, status: true },
+    });
+    return rows;
+  }
+
+  async save({ classId, date, marks, recordedBy, recordedAt }: ClassAttendance) {
+    await this.prisma.$transaction([
+      this.prisma.attendanceRecord.deleteMany({ where: { classId, date } }),
+      this.prisma.attendanceRecord.createMany({
+        data: marks.map((mark) => ({
+          classId,
+          date,
+          catechumenId: mark.catechumenId,
+          status: mark.status,
+          recordedBy,
+          recordedAt,
+        })),
+      }),
+    ]);
+  }
+}
+
+@Injectable()
+export class PrismaEvaluationRepository extends EvaluationRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listForClass(classId: string) {
+    if (!UUID.test(classId)) return [];
+    const rows = await this.prisma.evaluation.findMany({ where: { classId } });
+    return rows.map((row): Evaluation => ({
+      classId: row.classId,
+      catechumenId: row.catechumenId,
+      grades: Object.fromEntries(
+        (["T1", "T2", "T3"] as const).flatMap((term) => {
+          const value = row[term.toLowerCase() as "t1" | "t2" | "t3"];
+          return value === null ? [] : [[term, value]];
+        }),
+      ),
+      outcome: orUndefined(row.outcome),
+      updatedBy: row.updatedBy,
+      updatedAt: row.updatedAt,
+    }));
+  }
+
+  async saveMany(evaluations: Evaluation[]) {
+    await this.prisma.$transaction(
+      evaluations.map((item) => {
+        const data = {
+          t1: item.grades.T1 ?? null,
+          t2: item.grades.T2 ?? null,
+          t3: item.grades.T3 ?? null,
+          outcome: item.outcome ?? null,
+          updatedBy: item.updatedBy,
+          updatedAt: item.updatedAt,
+        };
+        return this.prisma.evaluation.upsert({
+          where: {
+            classId_catechumenId: { classId: item.classId, catechumenId: item.catechumenId },
+          },
+          create: { classId: item.classId, catechumenId: item.catechumenId, ...data },
+          update: data,
+        });
+      }),
+    );
+  }
+}
+
+function toDocument(row: EnrollmentDocumentRow) {
+  return EnrollmentDocument.restore(
+    {
+      enrollmentId: row.enrollmentId,
+      kind: row.kind,
+      file: {
+        key: row.fileKey,
+        name: row.fileName,
+        size: row.fileSize,
+        contentType: row.contentType as AllowedContentType,
+      },
+      uploadedBy: row.uploadedBy,
+      uploadedAt: row.uploadedAt,
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+@Injectable()
+export class PrismaEnrollmentDocumentRepository extends EnrollmentDocumentRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.enrollmentDocument.findUnique({ where: { id: id.value } });
+    return row ? toDocument(row) : null;
+  }
+
+  async listForEnrollment(enrollmentId: string) {
+    if (!UUID.test(enrollmentId)) return [];
+    const rows = await this.prisma.enrollmentDocument.findMany({
+      where: { enrollmentId },
+      orderBy: { uploadedAt: "asc" },
+    });
+    return rows.map(toDocument);
+  }
+
+  async listForEnrollments(enrollmentIds: string[]) {
+    const rows = await this.prisma.enrollmentDocument.findMany({
+      where: { enrollmentId: { in: validIds(enrollmentIds) } },
+    });
+    return rows.map(toDocument);
+  }
+
+  async save(document: EnrollmentDocument) {
+    const where = {
+      enrollmentId_kind: { enrollmentId: document.enrollmentId, kind: document.kind },
+    };
+    return this.prisma.$transaction(async (tx) => {
+      const previous = await tx.enrollmentDocument.findUnique({ where });
+      if (previous) await tx.enrollmentDocument.delete({ where: { id: previous.id } });
+      await tx.enrollmentDocument.create({
+        data: {
+          id: document.id.value,
+          enrollmentId: document.enrollmentId,
+          kind: document.kind,
+          fileKey: document.file.key,
+          fileName: document.file.name,
+          fileSize: document.file.size,
+          contentType: document.file.contentType,
+          uploadedBy: document.uploadedBy,
+          uploadedAt: document.uploadedAt,
+        },
+      });
+      return previous ? toDocument(previous) : null;
+    });
+  }
+}
+
+@Injectable()
+export class PrismaCatechistProfileRepository extends CatechistProfileRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async list() {
+    return (await this.prisma.catechistProfile.findMany()).map(toProfile);
+  }
+
+  async find(accountId: string) {
+    if (!UUID.test(accountId)) return null;
+    const row = await this.prisma.catechistProfile.findUnique({ where: { accountId } });
+    return row ? toProfile(row) : null;
+  }
+
+  async save(profile: CatechistProfile) {
+    const data = {
+      status: profile.status ?? null,
+      updatedAt: profile.updatedAt,
+      updatedBy: profile.updatedBy ?? null,
+    };
+    await this.prisma.catechistProfile.upsert({
+      where: { accountId: profile.accountId },
+      create: { accountId: profile.accountId, ...data },
+      update: data,
+    });
+  }
+}
+
+function toProfile(row: {
+  accountId: string;
+  status: CatechistProfile["status"] | null;
+  updatedAt: Date;
+  updatedBy: string | null;
+}): CatechistProfile {
+  return {
+    accountId: row.accountId,
+    status: orUndefined(row.status),
+    updatedAt: row.updatedAt,
+    updatedBy: orUndefined(row.updatedBy),
+  };
+}
+
+@Injectable()
+export class PrismaCatechistPresenceRepository extends CatechistPresenceRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listForDate(date: string) {
+    return this.prisma.catechistAttendance.findMany({ where: { date } });
+  }
+
+  async listForClasses(classIds: string[]) {
+    return this.prisma.catechistAttendance.findMany({
+      where: { classId: { in: validIds(classIds) } },
+    });
+  }
+
+  async save(presence: CatechistPresence) {
+    const data = {
+      status: presence.status,
+      recordedBy: presence.recordedBy,
+      recordedAt: presence.recordedAt,
+    };
+    await this.prisma.catechistAttendance.upsert({
+      where: { classId_date: { classId: presence.classId, date: presence.date } },
+      create: { classId: presence.classId, date: presence.date, ...data },
+      update: data,
+    });
+  }
+}
+
+@Injectable()
+export class PrismaSacramentRepository extends SacramentRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listCelebrations(catecheticalYear: string): Promise<SacramentCelebration[]> {
+    const rows = await this.prisma.sacramentCelebration.findMany({ where: { catecheticalYear } });
+    return rows.map((row) => ({ ...row, updatedBy: orUndefined(row.updatedBy) }));
+  }
+
+  async saveCelebration(celebration: SacramentCelebration) {
+    const data = {
+      date: celebration.date,
+      place: celebration.place,
+      updatedAt: celebration.updatedAt,
+      updatedBy: celebration.updatedBy ?? null,
+    };
+    await this.prisma.sacramentCelebration.upsert({
+      where: {
+        catecheticalYear_type: {
+          catecheticalYear: celebration.catecheticalYear,
+          type: celebration.type,
+        },
+      },
+      create: { catecheticalYear: celebration.catecheticalYear, type: celebration.type, ...data },
+      update: data,
+    });
+  }
+
+  async deleteCelebration(catecheticalYear: string, type: SacramentType) {
+    await this.prisma.sacramentCelebration.deleteMany({ where: { catecheticalYear, type } });
+  }
+
+  async listChecks(catechumenIds: string[], sacrament: SacramentType): Promise<RequirementCheck[]> {
+    return this.prisma.sacramentRequirementCheck.findMany({
+      where: { sacrament, catechumenId: { in: validIds(catechumenIds) } },
+    });
+  }
+
+  async saveCheck(check: RequirementCheck) {
+    const data = { met: check.met, updatedAt: check.updatedAt, updatedBy: check.updatedBy };
+    await this.prisma.sacramentRequirementCheck.upsert({
+      where: {
+        catechumenId_sacrament_requirement: {
+          catechumenId: check.catechumenId,
+          sacrament: check.sacrament,
+          requirement: check.requirement,
+        },
+      },
+      create: {
+        catechumenId: check.catechumenId,
+        sacrament: check.sacrament,
+        requirement: check.requirement,
+        ...data,
+      },
+      update: data,
+    });
+  }
+}

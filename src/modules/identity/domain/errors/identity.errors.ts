@@ -139,3 +139,27 @@ export class NotAdministratorError extends DomainError {
     super("Só a administração do portal pode fazer isto.");
   }
 }
+
+export class RoleAlreadyAssignedError extends DomainError {
+  readonly kind = "conflict";
+  readonly code = "identity.role_already_assigned";
+  constructor() {
+    super("A conta já tem este papel.");
+  }
+}
+
+export class AccountWithoutRolesError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "identity.account_without_roles";
+  constructor() {
+    super("A conta tem de ter pelo menos um papel.");
+  }
+}
+
+export class NotCatechistApproverError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "identity.not_catechist_approver";
+  constructor() {
+    super("A sua conta não tem permissão para aprovar catequistas.");
+  }
+}

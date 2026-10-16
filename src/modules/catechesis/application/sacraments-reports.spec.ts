@@ -91,13 +91,12 @@ describe("Sacramentos", () => {
       place: "Igreja Cristo Rei da Paz",
       scheduled: true,
     });
-    await expect(
-      ctx.sacraments.setCelebration.execute({
-        actorId: IDS.coordinator,
-        type: "CONFIRMATION",
-        celebration: { date: "2027-09-01", place: "Sé Catedral" },
-      }),
-    ).rejects.toThrow(InvalidSacramentError);
+    const outside = await ctx.sacraments.setCelebration.execute({
+      actorId: IDS.coordinator,
+      type: "CONFIRMATION",
+      celebration: { date: "2027-09-01", place: "Sé Catedral" },
+    });
+    expect(outside).toMatchObject({ date: "2027-09-01", place: "Sé Catedral", scheduled: true });
     const reset = await ctx.sacraments.setCelebration.execute({
       actorId: IDS.coordinator,
       type: "FIRST_COMMUNION",

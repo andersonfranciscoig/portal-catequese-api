@@ -25,6 +25,9 @@ class Directory extends PeopleDirectory {
   async listCatechists() {
     return [];
   }
+  async listByRoles() {
+    return [];
+  }
   async idsWithPermission(permission: string) {
     return permission === "SUPER_ADMIN" ? [ADMIN] : [ADMIN, COORDINATOR];
   }

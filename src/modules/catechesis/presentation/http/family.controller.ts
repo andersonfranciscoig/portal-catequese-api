@@ -4,6 +4,7 @@ import {
   Get,
   Header,
   Param,
+  Query,
   ParseUUIDPipe,
   Post,
   UploadedFile,
@@ -12,7 +13,7 @@ import {
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 
-import { ApiZodBody } from "../../../../shared/presentation/http/api-zod.js";
+import { ApiZodBody, ApiZodQuery } from "../../../../shared/presentation/http/api-zod.js";
 import {
   fileResponse,
   SingleFileUpload,
@@ -33,11 +34,16 @@ import {
 import { GetCatechumenProfileUseCase } from "../../application/use-cases/family/get-catechumen-profile.use-case.js";
 import { GetFamilyUseCase } from "../../application/use-cases/family/get-family.use-case.js";
 import { SubmitEnrollmentUseCase } from "../../application/use-cases/family/submit-enrollment.use-case.js";
+import { ListMyAnnouncementsUseCase } from "../../application/use-cases/coordination/announcements.use-cases.js";
+import { ListPortalCalendarUseCase } from "../../application/use-cases/coordination/calendar-activities.use-cases.js";
 import {
   confirmSchema,
   documentKindSchema,
+  myAnnouncementsSchema,
+  portalRoleSchema,
   submitEnrollmentSchema,
   type ConfirmBody,
+  type MyAnnouncementsQuery,
   type SubmitEnrollmentBody,
 } from "./catechesis.schemas.js";
 
@@ -56,6 +62,8 @@ export class FamilyController {
     private readonly readDocument: ReadEnrollmentDocumentUseCase,
     private readonly confirmations: ListMyConfirmationsUseCase,
     private readonly confirm: ConfirmEnrollmentUseCase,
+    private readonly announcements: ListMyAnnouncementsUseCase,
+    private readonly calendar: ListPortalCalendarUseCase,
   ) {}
 
   @Get("family")
@@ -129,6 +137,30 @@ export class FamilyController {
         documentId,
       }),
     );
+  }
+
+  @Get("announcements")
+  @ApiOperation({ summary: "Avisos da coordenação para o papel em uso" })
+  @ApiZodQuery(myAnnouncementsSchema)
+  myAnnouncements(
+    @CurrentAccount() account: AccessTokenClaims,
+    @Query(new ZodValidationPipe(myAnnouncementsSchema)) query: MyAnnouncementsQuery,
+  ) {
+    return this.announcements.execute({
+      accountId: account.accountId,
+      roles: account.roles,
+      role: query.role,
+    });
+  }
+
+  @Get("calendar")
+  @ApiOperation({ summary: "Calendário do papel: sacramentos e atividades visíveis" })
+  @ApiZodQuery(portalRoleSchema)
+  myCalendar(
+    @CurrentAccount() account: AccessTokenClaims,
+    @Query(new ZodValidationPipe(portalRoleSchema)) query: MyAnnouncementsQuery,
+  ) {
+    return this.calendar.execute({ roles: account.roles, role: query.role });
   }
 
   @Get("confirmations")

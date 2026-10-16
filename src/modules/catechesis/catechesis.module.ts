@@ -53,7 +53,9 @@ import { GetCatechumenProfileUseCase } from "./application/use-cases/family/get-
 import { GetFamilyUseCase } from "./application/use-cases/family/get-family.use-case.js";
 import { SubmitEnrollmentUseCase } from "./application/use-cases/family/submit-enrollment.use-case.js";
 import {
+  AnnouncementRepository,
   AttendanceRepository,
+  CalendarActivityRepository,
   CalendarRepository,
   CatechistPresenceRepository,
   CatechistProfileRepository,
@@ -65,6 +67,7 @@ import {
   SacramentRepository,
 } from "./domain/repositories/catechesis.repositories.js";
 import {
+  PrismaAnnouncementRepository,
   PrismaAttendanceRepository,
   PrismaCalendarRepository,
   PrismaCatechistPresenceRepository,
@@ -76,6 +79,7 @@ import {
   PrismaEvaluationRepository,
   PrismaSacramentRepository,
 } from "./infrastructure/persistence/prisma/prisma-catechesis.repositories.js";
+import { PrismaCalendarActivityRepository } from "./infrastructure/persistence/prisma/prisma-calendar-activity.repository.js";
 import { CatechistController } from "./presentation/http/catechist.controller.js";
 import { CoordinationManagementController } from "./presentation/http/coordination-management.controller.js";
 import { PublicCatechesisController } from "./presentation/http/public-catechesis.controller.js";
@@ -105,6 +109,19 @@ import {
   GenerateClassesUseCase,
   PlanClassesUseCase,
 } from "./application/use-cases/coordination/class-generation.use-cases.js";
+import {
+  DeleteCalendarActivityUseCase,
+  ListCalendarActivitiesUseCase,
+  ListPortalCalendarUseCase,
+  SaveCalendarActivityUseCase,
+} from "./application/use-cases/coordination/calendar-activities.use-cases.js";
+import {
+  DeleteAnnouncementUseCase,
+  ListAnnouncementsUseCase,
+  ListMyAnnouncementsUseCase,
+  PublishAnnouncementUseCase,
+  SetAnnouncementPinnedUseCase,
+} from "./application/use-cases/coordination/announcements.use-cases.js";
 import { GetOverviewUseCase } from "./application/use-cases/coordination/overview.use-case.js";
 import {
   ExportReportUseCase,
@@ -117,6 +134,8 @@ import {
   SetCelebrationUseCase,
   SetSacramentRequirementUseCase,
 } from "./application/use-cases/coordination/sacraments.use-cases.js";
+import { CoordinationAnnouncementsController } from "./presentation/http/coordination-announcements.controller.js";
+import { CoordinationCalendarActivitiesController } from "./presentation/http/coordination-calendar.controller.js";
 import { CoordinationReportsController } from "./presentation/http/coordination-reports.controller.js";
 import { CoordinationSacramentsController } from "./presentation/http/coordination-sacraments.controller.js";
 import { TrackEnrollmentUseCase } from "./application/use-cases/public/track-enrollment.use-case.js";
@@ -137,6 +156,8 @@ const CANDIDATES = ConfirmationCandidates;
 const PROFILES = CatechistProfileRepository;
 const PRESENCE = CatechistPresenceRepository;
 const SACRAMENTS = SacramentRepository;
+const ANNOUNCEMENTS = AnnouncementRepository;
+const ACTIVITIES = CalendarActivityRepository;
 
 /**
  * Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
@@ -153,6 +174,8 @@ const SACRAMENTS = SacramentRepository;
     CoordinationManagementController,
     CoordinationSacramentsController,
     CoordinationReportsController,
+    CoordinationAnnouncementsController,
+    CoordinationCalendarActivitiesController,
     PublicCatechesisController,
   ],
   providers: [
@@ -166,6 +189,8 @@ const SACRAMENTS = SacramentRepository;
     { provide: PROFILES, useClass: PrismaCatechistProfileRepository },
     { provide: PRESENCE, useClass: PrismaCatechistPresenceRepository },
     { provide: SACRAMENTS, useClass: PrismaSacramentRepository },
+    { provide: ANNOUNCEMENTS, useClass: PrismaAnnouncementRepository },
+    { provide: ACTIVITIES, useClass: PrismaCalendarActivityRepository },
     RateLimitGuard,
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
@@ -386,6 +411,16 @@ const SACRAMENTS = SacramentRepository;
       GetSessionUseCase,
       PaymentsLedger,
     ]),
+    // Avisos
+    provideUseCase(ListAnnouncementsUseCase, [ANNOUNCEMENTS, PEOPLE]),
+    provideUseCase(PublishAnnouncementUseCase, [ANNOUNCEMENTS, PEOPLE, AUDIT, Notifier, Clock]),
+    provideUseCase(SetAnnouncementPinnedUseCase, [ANNOUNCEMENTS, PEOPLE, AUDIT, Clock]),
+    provideUseCase(DeleteAnnouncementUseCase, [ANNOUNCEMENTS, AUDIT]),
+    provideUseCase(ListMyAnnouncementsUseCase, [ANNOUNCEMENTS, Clock]),
+    provideUseCase(ListCalendarActivitiesUseCase, [ACTIVITIES]),
+    provideUseCase(SaveCalendarActivityUseCase, [ACTIVITIES, AUDIT, Clock]),
+    provideUseCase(DeleteCalendarActivityUseCase, [ACTIVITIES, AUDIT]),
+    provideUseCase(ListPortalCalendarUseCase, [CALENDAR, SACRAMENTS, ACTIVITIES, Clock]),
   ],
 })
 export class CatechesisModule {}

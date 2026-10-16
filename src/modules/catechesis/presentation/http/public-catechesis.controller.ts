@@ -5,6 +5,7 @@ import {
   RateLimit,
   RateLimitGuard,
 } from "../../../../shared/presentation/http/rate-limit.guard.js";
+import { ListPortalCalendarUseCase } from "../../application/use-cases/coordination/calendar-activities.use-cases.js";
 import { GetCalendarUseCase } from "../../application/use-cases/coordination/calendar.use-cases.js";
 import { TrackEnrollmentUseCase } from "../../application/use-cases/public/track-enrollment.use-case.js";
 
@@ -14,6 +15,7 @@ import { TrackEnrollmentUseCase } from "../../application/use-cases/public/track
 export class PublicCatechesisController {
   constructor(
     private readonly calendar: GetCalendarUseCase,
+    private readonly events: ListPortalCalendarUseCase,
     private readonly track: TrackEnrollmentUseCase,
   ) {}
 
@@ -21,6 +23,12 @@ export class PublicCatechesisController {
   @ApiOperation({ summary: "Ano catequético e prazos de matrícula e confirmação" })
   getCalendar() {
     return this.calendar.execute();
+  }
+
+  @Get("catechesis/events")
+  @ApiOperation({ summary: "Próximas datas públicas: sacramentos e atividades para todos" })
+  getEvents() {
+    return this.events.listShared();
   }
 
   @Get("public/enrollments/:code")

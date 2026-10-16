@@ -16,3 +16,14 @@ export class HealthController {
     return { status: "ok" };
   }
 }
+
+/** Só a data e se o processo da API está a responder. Não consulta a base de dados. */
+@ApiTags("Saúde")
+@Controller("status")
+export class ApiStatusController {
+  @Get()
+  @ApiOperation({ summary: "Data atual e se a API está ativa" })
+  status() {
+    return { date: new Date().toISOString(), active: true };
+  }
+}

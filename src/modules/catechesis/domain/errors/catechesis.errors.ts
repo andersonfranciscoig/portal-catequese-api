@@ -92,6 +92,24 @@ export class SacramentCandidateNotFoundError extends error(
   "sacrament_candidate_not_found",
   "Este catequizando não é candidato a esta celebração no ano em curso.",
 ) {}
+export class InvalidAnnouncementError extends error("validation", "invalid_announcement") {}
+export class InvalidCalendarActivityError extends error("validation", "invalid_calendar_activity") {}
+export class CalendarActivityNotFoundError extends error(
+  "not_found",
+  "calendar_activity_not_found",
+  "Atividade não encontrada.",
+) {}
+export class AnnouncementNotFoundError extends error(
+  "not_found",
+  "announcement_not_found",
+  "Aviso não encontrado.",
+) {}
+export class AnnouncementRoleError extends error(
+  "forbidden",
+  "announcement_role",
+  "Esta conta não tem o papel pedido.",
+) {}
+
 export class ReportNotAllowedError extends error(
   "forbidden",
   "report_not_allowed",

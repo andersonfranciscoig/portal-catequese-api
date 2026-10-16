@@ -348,3 +348,82 @@ model SacramentRequirementCheck {
   @@map("sacrament_requirement_checks")
   @@schema("catechesis")
 }
+
+/// Quem vê o aviso no portal.
+enum AnnouncementAudience {
+  ALL
+  GUARDIANS
+  CATECHUMENS
+  CATECHISTS
+
+  @@schema("catechesis")
+}
+
+/// Aviso publicado pela coordenação (Comunicação).
+model Announcement {
+  id          String               @id @db.Uuid
+  title       String
+  body        String
+  audience    AnnouncementAudience
+  pinned      Boolean              @default(false)
+  authorName  String               @map("author_name")
+  publishedAt DateTime             @map("published_at") @db.Timestamptz(3)
+  updatedAt   DateTime             @map("updated_at") @db.Timestamptz(3)
+  /// Conta da coordenação que publicou. Sem chave estrangeira para a identidade.
+  createdBy   String               @map("created_by") @db.Uuid
+  reads       AnnouncementRead[]
+
+  @@index([publishedAt(sort: Desc)])
+  @@map("announcements")
+  @@schema("catechesis")
+}
+
+/// Uma conta abriu o aviso no portal (no máximo uma vez).
+model AnnouncementRead {
+  announcementId String   @map("announcement_id") @db.Uuid
+  accountId      String   @map("account_id") @db.Uuid
+  readAt         DateTime @map("read_at") @db.Timestamptz(3)
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, accountId])
+  @@map("announcement_reads")
+  @@schema("catechesis")
+}
+
+enum CalendarActivityKind {
+  ENROLLMENT
+  MEETING
+  CATECHESIS
+  CELEBRATION
+
+  @@schema("catechesis")
+}
+
+/// Quem vê a atividade no calendário do portal.
+enum CalendarActivityAudience {
+  ALL
+  GUARDIANS
+  CATECHISTS
+
+  @@schema("catechesis")
+}
+
+/// Atividade do ano além dos sacramentos (reunião, celebração, matrículas…).
+model CalendarActivity {
+  id          String                   @id @db.Uuid
+  title       String
+  description String
+  kind        CalendarActivityKind
+  audience    CalendarActivityAudience
+  /// YYYY-MM-DD
+  startsOn    String                   @map("starts_on")
+  endsOn      String?                  @map("ends_on")
+  createdAt   DateTime                 @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                 @map("updated_at") @db.Timestamptz(3)
+  createdBy   String                   @map("created_by") @db.Uuid
+
+  @@index([startsOn])
+  @@map("calendar_activities")
+  @@schema("catechesis")
+}

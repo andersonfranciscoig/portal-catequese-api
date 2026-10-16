@@ -346,10 +346,7 @@ export class SetCelebrationUseCase {
     const label = SACRAMENT_LABEL[input.type];
     if (input.celebration) {
       const { date, place } = input.celebration;
-      if (date < calendar.startsOn || date > calendar.endsOn)
-        throw new InvalidSacramentError(
-          `A data tem de ficar dentro do ano catequético (${calendar.startsOn} a ${calendar.endsOn}).`,
-        );
+      // A celebração pode ser antes ou depois dos encontros da catequese.
       await this.sacraments.saveCelebration({
         catecheticalYear: calendar.label,
         type: input.type,

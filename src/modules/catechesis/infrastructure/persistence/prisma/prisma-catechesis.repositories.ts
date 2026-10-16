@@ -10,6 +10,7 @@ import type {
   Prisma,
 } from "../../../../../shared/infrastructure/database/generated/client.js";
 import { PrismaService } from "../../../../../shared/infrastructure/database/prisma.service.js";
+import { Announcement, type AnnouncementAudience } from "../../../domain/announcement.js";
 import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
 import type { CatechistPresence, CatechistProfile } from "../../../domain/catechist-records.js";
@@ -36,6 +37,7 @@ import {
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
+  AnnouncementRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 
@@ -729,6 +731,96 @@ export class PrismaSacramentRepository extends SacramentRepository {
         ...data,
       },
       update: data,
+    });
+  }
+}
+
+function toAnnouncement(row: {
+  id: string;
+  title: string;
+  body: string;
+  audience: AnnouncementAudience;
+  pinned: boolean;
+  authorName: string;
+  publishedAt: Date;
+  updatedAt: Date;
+  createdBy: string;
+}) {
+  return Announcement.restore(
+    {
+      title: row.title,
+      body: row.body,
+      audience: row.audience,
+      pinned: row.pinned,
+      author: row.authorName,
+      publishedAt: row.publishedAt,
+      updatedAt: row.updatedAt,
+      createdBy: row.createdBy,
+    },
+    UniqueId.from(row.id),
+  );
+}
+
+@Injectable()
+export class PrismaAnnouncementRepository extends AnnouncementRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async list() {
+    const rows = await this.prisma.announcement.findMany();
+    return rows.map(toAnnouncement);
+  }
+
+  async findById(id: UniqueId) {
+    if (!UUID.test(id.value)) return null;
+    const row = await this.prisma.announcement.findUnique({ where: { id: id.value } });
+    return row ? toAnnouncement(row) : null;
+  }
+
+  async save(announcement: Announcement) {
+    const data = {
+      title: announcement.title,
+      body: announcement.body,
+      audience: announcement.audience,
+      pinned: announcement.pinned,
+      authorName: announcement.author,
+      publishedAt: announcement.publishedAt,
+      updatedAt: announcement.updatedAt,
+      createdBy: announcement.createdBy,
+    };
+    await this.prisma.announcement.upsert({
+      where: { id: announcement.id.value },
+      create: { id: announcement.id.value, ...data },
+      update: data,
+    });
+  }
+
+  async delete(id: UniqueId) {
+    if (!UUID.test(id.value)) return false;
+    const result = await this.prisma.announcement.deleteMany({ where: { id: id.value } });
+    return result.count > 0;
+  }
+
+  async readCounts(ids: string[]) {
+    const valid = validIds(ids);
+    const counts = new Map<string, number>();
+    if (!valid.length) return counts;
+    const groups = await this.prisma.announcementRead.groupBy({
+      by: ["announcementId"],
+      where: { announcementId: { in: valid } },
+      _count: { _all: true },
+    });
+    for (const group of groups) counts.set(group.announcementId, group._count._all);
+    return counts;
+  }
+
+  async markRead(announcementIds: string[], accountId: string, at: Date) {
+    const ids = validIds(announcementIds);
+    if (!ids.length || !UUID.test(accountId)) return;
+    await this.prisma.announcementRead.createMany({
+      data: ids.map((announcementId) => ({ announcementId, accountId, readAt: at })),
+      skipDuplicates: true,
     });
   }
 }

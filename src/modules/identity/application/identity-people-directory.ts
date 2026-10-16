@@ -52,6 +52,17 @@ export class IdentityPeopleDirectory extends PeopleDirectory {
     return (await this.accounts.findByRole(AccountRole.CATECHIST)).map(toSnapshot);
   }
 
+  async listByRoles(roles: PersonSnapshot["roles"][number][]) {
+    const found = new Map<string, PersonSnapshot>();
+    for (const role of roles) {
+      for (const account of await this.accounts.findByRole(role)) {
+        if (account.isBlocked || found.has(account.id.value)) continue;
+        found.set(account.id.value, toSnapshot(account));
+      }
+    }
+    return [...found.values()];
+  }
+
   async idsWithPermission(permission: NotifiedPermission) {
     // As candidatas têm a permissão ou são administração geral; o domínio decide
     // se está em vigor (ex.: aprovar catequistas exige também a coordenação).

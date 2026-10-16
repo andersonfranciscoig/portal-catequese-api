@@ -1,4 +1,6 @@
 import type { UniqueId } from "../../../../shared/domain/unique-id.js";
+import type { Announcement } from "../announcement.js";
+import type { CalendarActivity } from "../calendar-activity.js";
 import type { CatecheticalCalendar } from "../catechetical-calendar.js";
 import type { EnrollmentStatus } from "../catechesis.js";
 import type { CatechesisClass } from "../catechesis-class.js";
@@ -113,4 +115,22 @@ export abstract class SacramentRepository {
     sacrament: SacramentType,
   ): Promise<RequirementCheck[]>;
   abstract saveCheck(check: RequirementCheck): Promise<void>;
+}
+
+export abstract class AnnouncementRepository {
+  abstract list(): Promise<Announcement[]>;
+  abstract findById(id: UniqueId): Promise<Announcement | null>;
+  abstract save(announcement: Announcement): Promise<void>;
+  /** `false` quando o aviso não existia. */
+  abstract delete(id: UniqueId): Promise<boolean>;
+  abstract readCounts(ids: string[]): Promise<Map<string, number>>;
+  /** Regista a leitura (uma por conta). Repetir não altera a data. */
+  abstract markRead(announcementIds: string[], accountId: string, at: Date): Promise<void>;
+}
+
+export abstract class CalendarActivityRepository {
+  abstract list(): Promise<CalendarActivity[]>;
+  abstract findById(id: UniqueId): Promise<CalendarActivity | null>;
+  abstract save(activity: CalendarActivity): Promise<void>;
+  abstract delete(id: UniqueId): Promise<boolean>;
 }

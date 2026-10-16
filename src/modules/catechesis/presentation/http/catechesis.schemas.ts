@@ -221,3 +221,45 @@ export type CelebrationBody = z.infer<typeof celebrationSchema>;
 /* Relatórios */
 
 export const reportExportParam = z.enum(REPORT_EXPORTS);
+
+/* Avisos */
+
+export const announcementListSchema = z.object({
+  audience: z.enum(["todos", "ALL", "GUARDIANS", "CATECHUMENS", "CATECHISTS"]).default("todos"),
+  search: z.string().max(100).default(""),
+});
+export type AnnouncementListQuery = z.infer<typeof announcementListSchema>;
+
+export const publishAnnouncementSchema = z.object({
+  title: z.string().trim().min(3).max(80),
+  body: z.string().trim().min(10).max(600),
+  audience: z.enum(["ALL", "GUARDIANS", "CATECHUMENS", "CATECHISTS"]),
+  pinned: z.boolean(),
+  notify: z.boolean(),
+});
+export type PublishAnnouncementBody = z.infer<typeof publishAnnouncementSchema>;
+
+export const pinAnnouncementSchema = z.object({ pinned: z.boolean() });
+export type PinAnnouncementBody = z.infer<typeof pinAnnouncementSchema>;
+
+export const myAnnouncementsSchema = z.object({
+  role: z.enum(["GUARDIAN", "CATECHUMEN", "CATECHIST"]),
+});
+export type MyAnnouncementsQuery = z.infer<typeof myAnnouncementsSchema>;
+
+export const portalRoleSchema = myAnnouncementsSchema;
+
+const activityFields = {
+  title: z.string().trim().min(3).max(80),
+  description: z.string().trim().min(3).max(400),
+  kind: z.enum(["ENROLLMENT", "MEETING", "CATECHESIS", "CELEBRATION"]),
+  audience: z.enum(["ALL", "GUARDIANS", "CATECHISTS"]),
+  startsOn: isoDate,
+  endsOn: isoDate.optional(),
+};
+
+export const calendarActivitySchema = z.object(activityFields).refine(
+  (value) => !value.endsOn || value.endsOn >= value.startsOn,
+  { message: "A data de fim não pode ser anterior ao início.", path: ["endsOn"] },
+);
+export type CalendarActivityBody = z.infer<typeof calendarActivitySchema>;

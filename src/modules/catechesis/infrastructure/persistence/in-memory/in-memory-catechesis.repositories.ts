@@ -1,4 +1,6 @@
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
+import type { Announcement } from "../../../domain/announcement.js";
+import type { CalendarActivity } from "../../../domain/calendar-activity.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import type { CatechistPresence, CatechistProfile } from "../../../domain/catechist-records.js";
@@ -23,6 +25,8 @@ import {
   EnrollmentRepository,
   EvaluationRepository,
   type EnrollmentQuery,
+  AnnouncementRepository,
+  CalendarActivityRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 
@@ -235,5 +239,67 @@ export class InMemorySacramentRepository extends SacramentRepository {
   }
   async saveCheck(check: RequirementCheck) {
     this.checks.set(`${check.catechumenId}:${check.sacrament}:${check.requirement}`, { ...check });
+  }
+}
+
+export class InMemoryAnnouncementRepository extends AnnouncementRepository {
+  readonly items = new Map<string, Announcement>();
+  readonly reads = new Map<string, Date>();
+
+  async list() {
+    return [...this.items.values()];
+  }
+
+  async findById(id: UniqueId) {
+    return this.items.get(id.value) ?? null;
+  }
+
+  async save(announcement: Announcement) {
+    this.items.set(announcement.id.value, announcement);
+  }
+
+  async delete(id: UniqueId) {
+    const existed = this.items.delete(id.value);
+    for (const key of this.reads.keys()) {
+      if (key.startsWith(`${id.value}|`)) this.reads.delete(key);
+    }
+    return existed;
+  }
+
+  async readCounts(ids: string[]) {
+    const counts = new Map<string, number>();
+    for (const key of this.reads.keys()) {
+      const announcementId = key.slice(0, key.indexOf("|"));
+      if (!ids.includes(announcementId)) continue;
+      counts.set(announcementId, (counts.get(announcementId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  async markRead(announcementIds: string[], accountId: string, at: Date) {
+    for (const id of announcementIds) {
+      const key = `${id}|${accountId}`;
+      if (!this.reads.has(key)) this.reads.set(key, at);
+    }
+  }
+}
+
+export class InMemoryCalendarActivityRepository extends CalendarActivityRepository {
+  readonly items = new Map<string, CalendarActivity>();
+
+  async list() {
+    return [...this.items.values()];
+  }
+
+  async findById(id: UniqueId) {
+    return this.items.get(id.value) ?? null;
+  }
+
+  async save(activity: CalendarActivity) {
+    this.items.set(activity.id.value, activity);
+  }
+
+  async delete(id: UniqueId) {
+    return this.items.delete(id.value);
   }
 }

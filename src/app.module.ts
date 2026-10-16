@@ -9,7 +9,10 @@ import { PaymentsModule } from "./modules/payments/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
 import { CoreModule } from "./shared/infrastructure/core.module.js";
 import { DatabaseModule } from "./shared/infrastructure/database/database.module.js";
-import { HealthController } from "./shared/presentation/http/health.controller.js";
+import {
+  ApiStatusController,
+  HealthController,
+} from "./shared/presentation/http/health.controller.js";
 
 @Module({
   imports: [
@@ -23,6 +26,6 @@ import { HealthController } from "./shared/presentation/http/health.controller.j
     CatechesisModule,
     PaymentsModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, ApiStatusController],
 })
 export class AppModule {}

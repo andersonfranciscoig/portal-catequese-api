@@ -30,4 +30,6 @@ export abstract class PeopleDirectory {
   abstract listCatechists(): Promise<PersonSnapshot[]>;
   /** Contas ativas que têm a permissão em vigor (o super admin tem todas). */
   abstract idsWithPermission(permission: NotifiedPermission): Promise<string[]>;
+  /** Contas ativas com pelo menos um destes papéis, sem duplicados. */
+  abstract listByRoles(roles: PersonSnapshot["roles"][number][]): Promise<PersonSnapshot[]>;
 }

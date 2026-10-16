@@ -22,6 +22,19 @@ import {
   SaveRollUseCase,
 } from "../application/use-cases/catechist/roll.use-cases.js";
 import {
+  DeleteCalendarActivityUseCase,
+  ListCalendarActivitiesUseCase,
+  ListPortalCalendarUseCase,
+  SaveCalendarActivityUseCase,
+} from "../application/use-cases/coordination/calendar-activities.use-cases.js";
+import {
+  DeleteAnnouncementUseCase,
+  ListAnnouncementsUseCase,
+  ListMyAnnouncementsUseCase,
+  PublishAnnouncementUseCase,
+  SetAnnouncementPinnedUseCase,
+} from "../application/use-cases/coordination/announcements.use-cases.js";
+import {
   GetCalendarUseCase,
   SetCalendarUseCase,
   SetDeadlineUseCase,
@@ -81,6 +94,8 @@ import {
   type SubmitEnrollmentInput,
 } from "../application/use-cases/family/submit-enrollment.use-case.js";
 import {
+  InMemoryAnnouncementRepository,
+  InMemoryCalendarActivityRepository,
   InMemoryAttendanceRepository,
   InMemoryCalendarRepository,
   InMemoryCatechistPresenceRepository,
@@ -141,6 +156,12 @@ export class FakePeopleDirectory extends PeopleDirectory {
     return [...this.people.values()].filter((person) => person.roles.includes("CATECHIST"));
   }
 
+  async listByRoles(roles: PersonSnapshot["roles"][number][]) {
+    return [...this.people.values()].filter(
+      (person) => person.active && person.roles.some((role) => roles.includes(role)),
+    );
+  }
+
   async find(id: string) {
     return this.people.get(id) ?? null;
   }
@@ -183,6 +204,8 @@ export function createCatechesisTestContext() {
   const profiles = new InMemoryCatechistProfileRepository();
   const presence = new InMemoryCatechistPresenceRepository();
   const sacramentRepository = new InMemorySacramentRepository();
+  const announcements = new InMemoryAnnouncementRepository();
+  const activities = new InMemoryCalendarActivityRepository();
   const ledger = new FakePaymentsLedger();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
@@ -401,6 +424,23 @@ export function createCatechesisTestContext() {
           clock,
         ),
         setCelebration: new SetCelebrationUseCase(candidates, sacramentRepository, activity, clock),
+      };
+    },
+    get calendarActivities() {
+      return {
+        list: new ListCalendarActivitiesUseCase(activities),
+        save: new SaveCalendarActivityUseCase(activities, activity, clock),
+        remove: new DeleteCalendarActivityUseCase(activities, activity),
+        portal: new ListPortalCalendarUseCase(calendars, sacramentRepository, activities, clock),
+      };
+    },
+    get announcements() {
+      return {
+        list: new ListAnnouncementsUseCase(announcements, people),
+        publish: new PublishAnnouncementUseCase(announcements, people, activity, notifier, clock),
+        pin: new SetAnnouncementPinnedUseCase(announcements, people, activity, clock),
+        remove: new DeleteAnnouncementUseCase(announcements, activity),
+        mine: new ListMyAnnouncementsUseCase(announcements, clock),
       };
     },
     get reports() {

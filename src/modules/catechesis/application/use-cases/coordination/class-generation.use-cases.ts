@@ -1,7 +1,12 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
-import { formatLevel, type CatechesisLevel, type SessionSlot } from "../../../domain/catechesis.js";
+import {
+  EnrollmentType,
+  formatLevel,
+  type CatechesisLevel,
+  type SessionSlot,
+} from "../../../domain/catechesis.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
 import { catechistStatus } from "../../../domain/catechist-records.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
@@ -19,7 +24,7 @@ import type { EnrollmentActionUseCase } from "./enrollment.use-cases.js";
 
 export interface GenerationPlanView {
   level: CatechesisLevel;
-  /** Confirmados mais os aprovados à espera de turma. */
+  /** Confirmados, aprovados à espera de turma e transferências ainda sem turma. */
   catechumens: number;
   waiting: number;
   capacity: number;
@@ -36,6 +41,16 @@ function balance(total: number, count: number): number[] {
   return Array.from({ length: count }, (_, index) => base + (index < total % count ? 1 : 0));
 }
 
+/**
+ * Quem ainda precisa de turma: aprovados de qualquer tipo, e transferências
+ * que a coordenação ainda não aprovou. Uma transferência chega submetida e,
+ * sem isto, o nível fica a zero e não dá para criar a primeira turma.
+ */
+function awaitsPlacement(item: Enrollment): boolean {
+  if (item.classId || item.isConfirmed || item.status === "REJECTED") return false;
+  return item.status === "APPROVED" || item.type === EnrollmentType.TRANSFER;
+}
+
 /** Crisma é à tarde (adolescentes); o resto, de manhã. */
 function defaultSlot(level: CatechesisLevel): SessionSlot {
   return level.startsWith("CONFIRMATION") ? "SATURDAY_AFTERNOON" : "SATURDAY_MORNING";
@@ -48,8 +63,9 @@ const START_TIME: Record<SessionSlot, string | undefined> = {
 };
 
 /**
- * Turmas de um nível: quantas são precisas para os catequizandos (confirmados
- * e aprovados à espera de turma) e os catequistas disponíveis.
+ * Turmas de um nível: quantas são precisas para os catequizandos (confirmados,
+ * aprovados à espera de turma e transferências ainda sem turma) e os
+ * catequistas disponíveis.
  */
 export class ClassGeneration {
   constructor(
@@ -72,7 +88,7 @@ export class ClassGeneration {
     ]);
     const ofLevel = all.filter((item) => item.level === level);
     const waiting = ofLevel
-      .filter((item) => item.status === "APPROVED" && !item.classId)
+      .filter(awaitsPlacement)
       .sort((a, b) => a.submittedAt.getTime() - b.submittedAt.getTime());
     const confirmed = ofLevel.filter((item) => item.isConfirmed);
     const busy = new Set(
@@ -133,8 +149,9 @@ export interface GenerationResult {
 }
 
 /**
- * Gera as turmas que faltam num nível, coloca os aprovados à espera de turma
- * (por ordem de chegada, nas turmas com mais lugares livres) e atribui
+ * Gera as turmas que faltam num nível, coloca quem está à espera de turma
+ * (aprovados e transferências, por ordem de chegada, nas turmas com mais
+ * lugares livres) e atribui
  * catequistas disponíveis às turmas sem catequista. Não mexe nas turmas nem
  * nos catequizandos que já estão colocados.
  */

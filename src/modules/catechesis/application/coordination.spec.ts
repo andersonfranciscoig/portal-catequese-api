@@ -147,6 +147,45 @@ describe("Turmas", () => {
       }),
     ).toEqual({ created: 0, placed: 0, assigned: 0 });
   });
+
+  it("cria a turma e coloca uma transferência que ainda não foi aprovada", async () => {
+    await ctx.submit.execute({
+      accountId: IDS.guardian,
+      guardian: { relationship: "MOTHER" },
+      catechumen: {
+        fullName: "Lia Transferência",
+        birthDate: "2016-03-03",
+        gender: "FEMALE",
+        sacraments: { baptism: true, firstCommunion: false },
+      },
+      catechesis: {
+        type: "TRANSFER",
+        level: "COMMUNION_2",
+        preferredSlot: "SATURDAY_MORNING",
+        previousParish: "Paróquia de São Paulo",
+      },
+    });
+    // Uma matrícula nova, ainda submetida, não conta.
+    await ctx.enrollChild();
+    const untouched = await ctx.generation.plan.execute({ level: "COMMUNION_1", capacity: 30 });
+    expect(untouched.catechumens).toBe(0);
+
+    const plan = await ctx.generation.plan.execute({ level: "COMMUNION_2", capacity: 30 });
+    expect(plan).toMatchObject({ catechumens: 1, waiting: 1, existing: 0 });
+
+    const result = await ctx.generation.generate.execute({
+      actorId: IDS.coordinator,
+      level: "COMMUNION_2",
+      capacity: 30,
+      slot: "SATURDAY_MORNING",
+    });
+    expect(result).toEqual({ created: 1, placed: 1, assigned: 1 });
+    const classes = await ctx.listClasses.execute();
+    expect(classes.find((item) => item.level === "COMMUNION_2")).toMatchObject({
+      section: "A",
+      members: 1,
+    });
+  });
 });
 
 describe("Catequistas", () => {

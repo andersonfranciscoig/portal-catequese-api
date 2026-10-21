@@ -1,3 +1,4 @@
+import { RecordingMailer } from "../../../shared/testing/recording-mailer.js";
 import { RecordingNotifier } from "../../../shared/testing/recording-notifier.js";
 import { FixedClock } from "../../../shared/testing/fixed-clock.js";
 import { RecordingActivity } from "../../../shared/testing/recording-activity.js";
@@ -24,12 +25,17 @@ import { UnblockAccountUseCase } from "../application/use-cases/admin/unblock-ac
 import { AddOwnRoleUseCase } from "../application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "../application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "../application/use-cases/change-password.use-case.js";
+import { ConfirmRegistrationUseCase } from "../application/use-cases/confirm-registration.use-case.js";
 import { GetCurrentAccountUseCase } from "../application/use-cases/get-current-account.use-case.js";
 import { RefreshSessionUseCase } from "../application/use-cases/refresh-session.use-case.js";
 import { RegisterAccountUseCase } from "../application/use-cases/register-account.use-case.js";
+import { RequestPasswordResetUseCase } from "../application/use-cases/request-password-reset.use-case.js";
+import { RequestRegistrationUseCase } from "../application/use-cases/request-registration.use-case.js";
+import { ResetPasswordUseCase } from "../application/use-cases/reset-password.use-case.js";
 import { SignOutUseCase } from "../application/use-cases/sign-out.use-case.js";
 import { UpdateProfileUseCase } from "../application/use-cases/update-profile.use-case.js";
 import { InMemoryAccountRepository } from "../infrastructure/persistence/in-memory/in-memory-account.repository.js";
+import { InMemoryEmailChallenges } from "../infrastructure/persistence/in-memory/in-memory-email-challenges.js";
 import { InMemorySessionRepository } from "../infrastructure/persistence/in-memory/in-memory-session.repository.js";
 import {
   FakeAccessTokenIssuer,
@@ -42,6 +48,7 @@ import {
 export function createIdentityTestContext() {
   const accounts = new InMemoryAccountRepository();
   const notifier = new RecordingNotifier();
+  const mailer = new RecordingMailer();
   const sessions = new InMemorySessionRepository();
   const hasher = new FakePasswordHasher();
   const accessTokens = new FakeAccessTokenIssuer();
@@ -54,6 +61,18 @@ export function createIdentityTestContext() {
     refreshTokenTtlDays: 30,
   });
   const policy = new SignInPolicy(launch);
+  const challenges = new InMemoryEmailChallenges(clock);
+  const register = new RegisterAccountUseCase(
+    accounts,
+    hasher,
+    issuer,
+    policy,
+    events,
+    activity,
+    clock,
+    notifier,
+    mailer,
+  );
 
   /** Cria diretamente uma conta (ex.: a administração inicial). */
   async function seedAccount(options: {
@@ -83,6 +102,8 @@ export function createIdentityTestContext() {
   return {
     accounts,
     notifier,
+    mailer,
+    challenges,
     sessions,
     accessTokens,
     events,
@@ -90,22 +111,30 @@ export function createIdentityTestContext() {
     launch,
     clock,
     seedAccount,
-    register: new RegisterAccountUseCase(
+    register,
+    requestRegistration: new RequestRegistrationUseCase(
       accounts,
       hasher,
-      issuer,
       policy,
-      events,
+      challenges,
+      mailer,
+    ),
+    confirmRegistration: new ConfirmRegistrationUseCase(challenges, register),
+    requestPasswordReset: new RequestPasswordResetUseCase(accounts, challenges, mailer),
+    resetPassword: new ResetPasswordUseCase(
+      accounts,
+      hasher,
+      challenges,
       activity,
       clock,
-      notifier,
+      mailer,
     ),
     authenticate: new AuthenticateUseCase(accounts, hasher, issuer, policy, activity),
     refresh: new RefreshSessionUseCase(sessions, accounts, refreshTokens, issuer, policy, clock),
     signOut: new SignOutUseCase(sessions, refreshTokens, activity, clock),
     currentAccount: new GetCurrentAccountUseCase(accounts),
     updateProfile: new UpdateProfileUseCase(accounts, activity, clock),
-    changePassword: new ChangePasswordUseCase(accounts, hasher, activity, clock),
+    changePassword: new ChangePasswordUseCase(accounts, hasher, activity, clock, mailer),
     addOwnRole: new AddOwnRoleUseCase(accounts, events, activity, clock, notifier),
     setRoles: new SetAccountRolesUseCase(accounts, events, activity, clock, notifier),
     listAccounts: new ListAccountsUseCase(accounts),

@@ -9,7 +9,9 @@ export type DomainErrorKind =
   | "forbidden"
   | "not_found"
   /** Um serviço de que a ação depende (ex.: armazenamento) não respondeu. */
-  | "unavailable";
+  | "unavailable"
+  /** Pedidos em excesso (ex.: reenvio de código). */
+  | "rate_limited";
 
 /** Erro esperado de uma regra de negócio (nunca um bug). */
 export abstract class DomainError extends Error {

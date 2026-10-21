@@ -31,6 +31,13 @@ enum Permission {
   @@schema("identity")
 }
 
+enum EmailChallengePurpose {
+  REGISTER
+  PASSWORD_RESET
+
+  @@schema("identity")
+}
+
 model Account {
   id            String           @id @db.Uuid
   /// Papéis da conta (ex.: encarregado e catequista).
@@ -67,5 +74,22 @@ model Session {
 
   @@index([accountId])
   @@map("sessions")
+  @@schema("identity")
+}
+
+/// Desafio por email: OTP no registo ou token de recuperação de palavra-passe.
+model EmailChallenge {
+  id          String                @id @db.Uuid
+  email       String
+  purpose     EmailChallengePurpose
+  codeHash    String                @map("code_hash")
+  payloadJson Json                  @map("payload_json")
+  attempts    Int                   @default(0)
+  expiresAt   DateTime              @map("expires_at") @db.Timestamptz(3)
+  consumedAt  DateTime?             @map("consumed_at") @db.Timestamptz(3)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([email, purpose])
+  @@map("email_challenges")
   @@schema("identity")
 }

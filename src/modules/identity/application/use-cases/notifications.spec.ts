@@ -25,7 +25,7 @@ describe("Notificações das contas", () => {
     await ctx.register.execute({
       ...guardianInput,
       phone: "923000111",
-      email: undefined,
+      email: "lucas.pedro@exemplo.ao",
       role: "CATECHIST",
     });
     expect(ctx.notifier.last("identity.catechist_requested")).toMatchObject({

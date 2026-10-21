@@ -50,7 +50,11 @@ describe("RegisterAccountUseCase", () => {
   it("recusa telefone já registado, mesmo escrito de outra forma", async () => {
     await ctx.register.execute(guardianInput);
     await expect(
-      ctx.register.execute({ ...guardianInput, email: undefined, phone: "+244 923-482-117" }),
+      ctx.register.execute({
+        ...guardianInput,
+        email: "outro.francisco@gmail.com",
+        phone: "+244 923-482-117",
+      }),
     ).rejects.toThrow(AccountAlreadyExistsError);
   });
 

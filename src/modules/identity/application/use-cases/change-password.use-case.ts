@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../shared/application/activity-recorder.js";
+import type { Mailer } from "../../../../shared/application/mailer.js";
 import type { UseCase } from "../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../shared/domain/unique-id.js";
@@ -23,6 +24,7 @@ export class ChangePasswordUseCase implements UseCase<ChangePasswordInput, void>
     private readonly hasher: PasswordHasher,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly mailer: Mailer,
   ) {}
 
   async execute(input: ChangePasswordInput): Promise<void> {
@@ -42,5 +44,11 @@ export class ChangePasswordUseCase implements UseCase<ChangePasswordInput, void>
       action: "identity.password_changed",
       summary: "Mudou a palavra-passe",
     });
+    if (account.email) {
+      this.mailer.sendPasswordChanged({
+        email: account.email.value,
+        firstName: account.fullName.firstName,
+      });
+    }
   }
 }

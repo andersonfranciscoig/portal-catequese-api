@@ -17,7 +17,7 @@ export const registerSchema = z.object({
   role: z.enum([AccountRole.GUARDIAN, AccountRole.CATECHUMEN, AccountRole.CATECHIST]),
   fullName: z.string().max(200),
   phone: z.string().max(40),
-  email: optionalText(254),
+  email: z.string().max(254),
   password: z.string().max(200),
 });
 
@@ -38,8 +38,29 @@ export type RefreshBody = z.infer<typeof refreshSchema>;
 export const profileSchema = z.object({
   fullName: z.string().max(200),
   phone: z.string().max(40),
-  email: optionalText(254),
+  email: z.string().max(254),
 });
+
+export const verifyRegistrationSchema = z.object({
+  email: z.string().max(254),
+  code: z.string().max(12),
+});
+
+export type VerifyRegistrationBody = z.infer<typeof verifyRegistrationSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().max(254),
+});
+
+export type ForgotPasswordBody = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  email: z.string().max(254),
+  token: z.string().max(80),
+  password: z.string().max(200),
+});
+
+export type ResetPasswordBody = z.infer<typeof resetPasswordSchema>;
 
 export type ProfileBody = z.infer<typeof profileSchema>;
 

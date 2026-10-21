@@ -1,6 +1,6 @@
 /** Área do portal onde a ação aconteceu (para filtrar o registo de atividade). */
 export type ActivityCategory =
-  "AUTH" | "ENROLLMENT" | "FINANCE" | "SETTINGS" | "CATECHISTS" | "ADMIN";
+  "AUTH" | "ENROLLMENT" | "FINANCE" | "SETTINGS" | "CATECHISTS" | "ADMIN" | "COMMUNICATION";
 
 export interface ActivityRecord {
   /** Conta que fez a ação; vazio em ações anónimas (ex.: pedido de acesso, entrada falhada). */

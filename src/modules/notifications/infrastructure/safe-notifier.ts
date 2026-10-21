@@ -7,7 +7,8 @@ import { DeliverNotificationUseCase } from "../application/use-cases/deliver-not
 
 /**
  * Implementação da porta `Notifier`: entrega no sino e, se a pessoa tiver
- * email, envia também a mensagem. Uma falha nunca anula a acção.
+ * email (e a mensagem não o dispensar), envia também por email. Uma falha
+ * nunca anula a ação.
  */
 @Injectable()
 export class SafeNotifier extends Notifier {
@@ -31,6 +32,7 @@ export class SafeNotifier extends Notifier {
       );
     }
 
+    if (message.email === false) return;
     try {
       await this.emailRecipients(message);
     } catch (error) {

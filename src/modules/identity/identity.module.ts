@@ -163,7 +163,13 @@ const AUDIT = ActivityRecorder;
     provideUseCase(SignOutUseCase, [SessionRepository, RefreshTokenGenerator, AUDIT, Clock]),
     provideUseCase(GetCurrentAccountUseCase, [AccountRepository]),
     provideUseCase(UpdateProfileUseCase, [AccountRepository, AUDIT, Clock]),
-    provideUseCase(ChangePasswordUseCase, [AccountRepository, PasswordHasher, AUDIT, Clock, Mailer]),
+    provideUseCase(ChangePasswordUseCase, [
+      AccountRepository,
+      PasswordHasher,
+      AUDIT,
+      Clock,
+      Mailer,
+    ]),
     provideUseCase(AddOwnRoleUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     // Administração
     provideUseCase(ListAccountsUseCase, [AccountRepository]),

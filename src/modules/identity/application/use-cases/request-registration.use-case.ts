@@ -1,6 +1,9 @@
 import type { Mailer } from "../../../../shared/application/mailer.js";
 import type { UseCase } from "../../../../shared/application/use-case.js";
-import { AccountAlreadyExistsError, EmailRequiredError } from "../../domain/errors/identity.errors.js";
+import {
+  AccountAlreadyExistsError,
+  EmailRequiredError,
+} from "../../domain/errors/identity.errors.js";
 import type { AccountRepository } from "../../domain/repositories/account.repository.js";
 import type { PasswordHasher } from "../../domain/services/password-hasher.js";
 import { Email } from "../../domain/value-objects/email.js";

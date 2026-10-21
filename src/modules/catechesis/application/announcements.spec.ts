@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AnnouncementNotFoundError, AnnouncementRoleError } from "../domain/errors/catechesis.errors.js";
+import {
+  AnnouncementNotFoundError,
+  AnnouncementRoleError,
+} from "../domain/errors/catechesis.errors.js";
 import { createCatechesisTestContext, IDS } from "../testing/catechesis-test-context.js";
 
 let ctx: ReturnType<typeof createCatechesisTestContext>;
@@ -27,12 +30,24 @@ describe("Avisos", () => {
   });
 
   it("publica, notifica no sino sem o autor, fixa, lê no portal e apaga", async () => {
+    // Só quem tem email recebe o aviso por email (a coordenação, que publica, nunca).
+    ctx.people.add({
+      id: IDS.guardian,
+      fullName: "Anderson Francisco",
+      email: "anderson@exemplo.ao",
+    });
+    ctx.people.add({
+      id: IDS.coordinator,
+      fullName: "Teresa Domingos",
+      email: "teresa@exemplo.ao",
+    });
     const published = await ctx.announcements.publish.execute({
       actorId: IDS.coordinator,
       ...TEXT,
       audience: "ALL",
       pinned: false,
       notify: true,
+      email: true,
     });
     expect(published.author).toBe("Coordenação da catequese");
     expect(published.recipients).toBe(6);
@@ -43,6 +58,24 @@ describe("Avisos", () => {
       title: "Novo aviso: Reunião de pais",
       link: "/portal/catequese",
       exceptAccountId: IDS.coordinator,
+      // O sino não manda o seu email: o aviso segue completo, à parte.
+      email: false,
+    });
+    expect(ctx.mailer.announcements).toEqual([
+      {
+        email: "anderson@exemplo.ao",
+        firstName: "Anderson",
+        title: "Reunião de pais",
+        body: TEXT.body,
+        audienceLabel: "Membro da comunidade da catequese",
+        publishedAt: expect.any(Date),
+        link: "/portal/catequese",
+      },
+    ]);
+    expect(ctx.activity.entries.at(-1)).toMatchObject({
+      category: "COMMUNICATION",
+      action: "communication.announcement_published",
+      summary: "Publicou o aviso «Reunião de pais» (avisou no sino e por email a 1 pessoa)",
     });
     expect(notice && "accountIds" in notice.to && notice.to.accountIds).toEqual(
       expect.arrayContaining([IDS.guardian, IDS.catechist, IDS.both]),
@@ -57,8 +90,12 @@ describe("Avisos", () => {
       audience: "CATECHISTS",
       pinned: true,
       notify: false,
+      email: false,
     });
-    expect(ctx.notifier.kinds().filter((kind) => kind.startsWith("communication."))).toHaveLength(1);
+    expect(ctx.mailer.announcements).toHaveLength(1);
+    expect(ctx.notifier.kinds().filter((kind) => kind.startsWith("communication."))).toHaveLength(
+      1,
+    );
 
     const list = await ctx.announcements.list.execute({ search: "reuniao" });
     expect(list.items.map((item) => item.title)).toEqual(["Reunião de pais"]);
@@ -78,14 +115,20 @@ describe("Avisos", () => {
       role: "GUARDIAN",
     });
     expect(forGuardian.map((item) => item.title)).toEqual(["Reunião de pais"]);
-    expect((await ctx.announcements.list.execute({})).items.find((item) => item.id === published.id)?.reads).toBe(1);
+    expect(
+      (await ctx.announcements.list.execute({})).items.find((item) => item.id === published.id)
+        ?.reads,
+    ).toBe(1);
 
     await ctx.announcements.mine.execute({
       accountId: IDS.guardian,
       roles: ["GUARDIAN"],
       role: "GUARDIAN",
     });
-    expect((await ctx.announcements.list.execute({})).items.find((item) => item.id === published.id)?.reads).toBe(1);
+    expect(
+      (await ctx.announcements.list.execute({})).items.find((item) => item.id === published.id)
+        ?.reads,
+    ).toBe(1);
 
     const forCatechist = await ctx.announcements.mine.execute({
       accountId: IDS.catechist,

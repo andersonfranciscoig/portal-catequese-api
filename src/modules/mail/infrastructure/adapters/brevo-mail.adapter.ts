@@ -14,9 +14,7 @@ export class BrevoMailAdapter extends MailPort {
   async send(input: SendMailInput): Promise<void> {
     const apiKey = this.config.email.apiKey?.trim();
     if (!apiKey) {
-      throw new Error(
-        "EMAIL_API_KEY em falta — crie uma chave em Brevo → SMTP & API → API keys",
-      );
+      throw new Error("EMAIL_API_KEY em falta — crie uma chave em Brevo → SMTP & API → API keys");
     }
     const res = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",

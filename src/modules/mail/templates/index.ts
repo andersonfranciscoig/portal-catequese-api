@@ -1,8 +1,8 @@
-export type { RenderedEmail } from "./layout.js";
+export type { MailBrand, RenderedEmail } from "./layout.js";
 export {
   authVerifyOtp,
   authPasswordReset,
   authPasswordChanged,
   authWelcome,
-  portalNotification,
 } from "./auth.templates.js";
+export { portalAnnouncement, portalNotification } from "./portal.templates.js";

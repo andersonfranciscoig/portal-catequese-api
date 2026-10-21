@@ -15,7 +15,9 @@ import { ListActivityUseCase } from "../../application/use-cases/list-activity.u
 const activityQuerySchema = z.object({
   actorId: z.uuid().optional(),
   involvingAccountId: z.uuid().optional(),
-  category: z.enum(["AUTH", "ENROLLMENT", "FINANCE", "SETTINGS", "CATECHISTS", "ADMIN"]).optional(),
+  category: z
+    .enum(["AUTH", "ENROLLMENT", "FINANCE", "SETTINGS", "CATECHISTS", "ADMIN", "COMMUNICATION"])
+    .optional(),
   search: z
     .string()
     .max(120)

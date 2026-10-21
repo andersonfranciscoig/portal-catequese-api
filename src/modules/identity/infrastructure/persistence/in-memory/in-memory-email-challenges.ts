@@ -51,7 +51,12 @@ export class InMemoryEmailChallenges extends EmailChallenges {
   }
 
   async consumeRegister(email: string, code: string) {
-    return (await this.consume(email, "REGISTER", code, "Código incorrecto.")) as RegisterChallengePayload;
+    return (await this.consume(
+      email,
+      "REGISTER",
+      code,
+      "Código incorrecto.",
+    )) as RegisterChallengePayload;
   }
 
   async issuePasswordReset(email: string, payload: PasswordResetPayload) {
@@ -126,7 +131,9 @@ export class InMemoryEmailChallenges extends EmailChallenges {
   }
 
   private assertCooldown(email: string, purpose: Purpose) {
-    const recent = this.items.filter((item) => item.email === email && item.purpose === purpose).at(-1);
+    const recent = this.items
+      .filter((item) => item.email === email && item.purpose === purpose)
+      .at(-1);
     if (recent && this.clock.now().getTime() - recent.createdAt.getTime() < RESEND_COOLDOWN_MS) {
       throw new EmailChallengeRateLimitedError();
     }

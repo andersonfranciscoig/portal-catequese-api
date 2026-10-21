@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
 import { EventBus } from "../../shared/application/event-bus.js";
 import { FileStorage, UploadPolicy } from "../../shared/application/file-storage.js";
+import { Mailer } from "../../shared/application/mailer.js";
 import { Notifier } from "../../shared/application/notifier.js";
 import { PaymentsLedger } from "../../shared/application/payments-ledger.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
@@ -413,7 +414,14 @@ const ACTIVITIES = CalendarActivityRepository;
     ]),
     // Avisos
     provideUseCase(ListAnnouncementsUseCase, [ANNOUNCEMENTS, PEOPLE]),
-    provideUseCase(PublishAnnouncementUseCase, [ANNOUNCEMENTS, PEOPLE, AUDIT, Notifier, Clock]),
+    provideUseCase(PublishAnnouncementUseCase, [
+      ANNOUNCEMENTS,
+      PEOPLE,
+      AUDIT,
+      Notifier,
+      Mailer,
+      Clock,
+    ]),
     provideUseCase(SetAnnouncementPinnedUseCase, [ANNOUNCEMENTS, PEOPLE, AUDIT, Clock]),
     provideUseCase(DeleteAnnouncementUseCase, [ANNOUNCEMENTS, AUDIT]),
     provideUseCase(ListMyAnnouncementsUseCase, [ANNOUNCEMENTS, Clock]),

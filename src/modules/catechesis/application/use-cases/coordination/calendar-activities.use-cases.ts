@@ -150,7 +150,10 @@ export class ListPortalCalendarUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute(input: { roles: readonly string[]; role: PortalRole }): Promise<PortalCalendarEvent[]> {
+  async execute(input: {
+    roles: readonly string[];
+    role: PortalRole;
+  }): Promise<PortalCalendarEvent[]> {
     if (!input.roles.includes(input.role)) throw new AnnouncementRoleError();
     const own = input.role === "CATECHUMEN" ? undefined : AUDIENCE_OF[input.role];
     return this.collect(own);

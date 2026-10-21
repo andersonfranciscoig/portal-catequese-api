@@ -1,107 +1,163 @@
 import {
+  callout,
   e,
-  highlightBox,
+  fallbackLink,
+  greeting,
   mailButton,
+  mailCode,
   mailLayout,
-  mailOtpBoxes,
   muted,
   paragraph,
+  plainText,
+  type MailBrand,
   type RenderedEmail,
 } from "./layout.js";
 
-export function authVerifyOtp(props: {
-  firstName: string;
-  otp: string;
-  expiresMinutes: number;
-}): RenderedEmail {
-  const subject = `${props.otp} — código de verificação`;
-  const text = `Olá ${props.firstName},\n\nO seu código de verificação é: ${props.otp}\nExpira em ${props.expiresMinutes} minutos.\n\n— Portal da Catequese · Cristo Rei da Paz`;
-  const html = mailLayout({
-    preview: `Código ${props.otp} para concluir o registo`,
-    title: "Verifique o seu email",
-    bodyHtml: `
-      ${paragraph(`Olá <strong>${e(props.firstName)}</strong>,`)}
-      ${paragraph("Use o código abaixo para concluir a criação da sua conta no Portal da Catequese.")}
-      ${mailOtpBoxes(props.otp)}
-      ${muted(`Este código expira em <strong>${props.expiresMinutes} minutos</strong>. Não o partilhe com ninguém.`)}
-      ${highlightBox("Se não pediu este código, pode ignorar este email com segurança.")}
-    `,
-  });
-  return { subject, html, text };
+/** Código para confirmar o email ao criar a conta. */
+export function authVerifyOtp(
+  brand: MailBrand,
+  props: { firstName: string; otp: string; expiresMinutes: number },
+): RenderedEmail {
+  return {
+    subject: `${props.otp} é o seu código do Portal da Catequese`,
+    html: mailLayout({
+      brand,
+      preview: `Use ${props.otp} para confirmar o seu email. Válido durante ${props.expiresMinutes} minutos.`,
+      eyebrow: "Confirmação de email",
+      title: "Confirme o seu email",
+      bodyHtml: `
+        ${greeting(props.firstName)}
+        ${paragraph("Está quase! Introduza este código no portal para concluir a criação da sua conta.")}
+        ${mailCode(props.otp)}
+        ${muted(`O código é válido durante <strong>${props.expiresMinutes} minutos</strong> e só pode ser usado uma vez. Nunca o partilhe: ninguém da paróquia lho vai pedir.`)}
+        ${callout("Não pediu este código? Pode ignorar este email; sem o código, ninguém consegue usar o seu endereço.", "info")}
+      `,
+      footerNote:
+        "Recebeu este email porque alguém usou este endereço para criar uma conta no Portal da Catequese.",
+    }),
+    text: plainText(brand, [
+      `Olá, ${props.firstName}.`,
+      "",
+      `O seu código do Portal da Catequese é: ${props.otp}`,
+      `É válido durante ${props.expiresMinutes} minutos e só pode ser usado uma vez.`,
+      "",
+      "Não pediu este código? Pode ignorar este email.",
+    ]),
+  };
 }
 
-export function authPasswordReset(props: {
-  firstName: string;
-  resetUrl: string;
-  expiresMinutes: number;
-}): RenderedEmail {
-  const subject = "Redefinir a sua palavra-passe";
-  const text = `Olá ${props.firstName},\n\nRedefina a palavra-passe: ${props.resetUrl}\n\nExpira em ${props.expiresMinutes} minutos.\n— Portal da Catequese`;
-  const html = mailLayout({
-    preview: "Link para redefinir palavra-passe",
-    title: "Redefinir palavra-passe",
-    bodyHtml: `
-      ${paragraph(`Olá <strong>${e(props.firstName)}</strong>,`)}
-      ${paragraph("Recebemos um pedido para redefinir a palavra-passe da sua conta.")}
-      ${mailButton(props.resetUrl, "Redefinir palavra-passe")}
-      ${muted(`O link expira em ${props.expiresMinutes} minutos.`)}
-      ${highlightBox("Se não fez este pedido, ignore este email. A sua conta permanece segura.")}
-    `,
-  });
-  return { subject, html, text };
+/** Ligação para escolher uma nova palavra-passe. */
+export function authPasswordReset(
+  brand: MailBrand,
+  props: { firstName: string; resetUrl: string; expiresMinutes: number },
+): RenderedEmail {
+  const hours = props.expiresMinutes >= 60 && props.expiresMinutes % 60 === 0;
+  const validity = hours
+    ? `${props.expiresMinutes / 60} ${props.expiresMinutes === 60 ? "hora" : "horas"}`
+    : `${props.expiresMinutes} minutos`;
+  return {
+    subject: "Redefinir a palavra-passe do Portal da Catequese",
+    html: mailLayout({
+      brand,
+      preview: `Escolha uma nova palavra-passe. A ligação é válida durante ${validity}.`,
+      eyebrow: "Segurança da conta",
+      title: "Redefinir a palavra-passe",
+      bodyHtml: `
+        ${greeting(props.firstName)}
+        ${paragraph("Recebemos um pedido para redefinir a palavra-passe da sua conta. Carregue no botão para escolher uma nova.")}
+        ${mailButton(props.resetUrl, "Escolher nova palavra-passe")}
+        ${muted(`A ligação é válida durante <strong>${validity}</strong> e só pode ser usada uma vez.`)}
+        ${fallbackLink(props.resetUrl)}
+        ${callout("Não foi você? Ignore este email: a sua palavra-passe atual continua a funcionar.", "info")}
+      `,
+      footerNote:
+        "Recebeu este email porque foi pedida a recuperação da palavra-passe desta conta.",
+    }),
+    text: plainText(brand, [
+      `Olá, ${props.firstName}.`,
+      "",
+      "Recebemos um pedido para redefinir a palavra-passe da sua conta.",
+      `Escolha uma nova aqui (válido durante ${validity}):`,
+      props.resetUrl,
+      "",
+      "Não foi você? Ignore este email: a sua palavra-passe atual continua a funcionar.",
+    ]),
+  };
 }
 
-export function authPasswordChanged(props: { firstName: string }): RenderedEmail {
-  const subject = "Palavra-passe alterada com sucesso";
-  const text = `Olá ${props.firstName},\n\nA palavra-passe da sua conta foi alterada.\n— Portal da Catequese`;
-  const html = mailLayout({
-    preview: "Confirmação de alteração de palavra-passe",
-    title: "Palavra-passe actualizada",
-    bodyHtml: `
-      ${paragraph(`Olá <strong>${e(props.firstName)}</strong>,`)}
-      ${paragraph("Confirmamos que a palavra-passe da sua conta foi alterada com sucesso.")}
-      ${highlightBox("Não foi você? Contacte a secretaria da catequese o mais depressa possível.")}
-    `,
+/** Aviso de segurança depois de mudar a palavra-passe. */
+export function authPasswordChanged(
+  brand: MailBrand,
+  props: { firstName: string; changedAt?: Date },
+): RenderedEmail {
+  const when = (props.changedAt ?? new Date()).toLocaleString("pt-PT", {
+    timeZone: "Africa/Luanda",
+    dateStyle: "long",
+    timeStyle: "short",
   });
-  return { subject, html, text };
+  return {
+    subject: "A sua palavra-passe foi alterada",
+    html: mailLayout({
+      brand,
+      preview: "Confirmamos que a palavra-passe da sua conta foi alterada.",
+      eyebrow: "Segurança da conta",
+      title: "Palavra-passe alterada",
+      bodyHtml: `
+        ${greeting(props.firstName)}
+        ${callout(`A palavra-passe da sua conta foi alterada a <strong>${e(when)}</strong>.`, "success")}
+        ${paragraph("A partir de agora, entre no portal com a nova palavra-passe.")}
+        ${callout("<strong>Não foi você?</strong> Recupere já o acesso em “Esqueci-me da palavra-passe” e avise a secretaria da catequese.", "warning")}
+        ${mailButton(`${brand.portalUrl}/entrar`, "Entrar no portal")}
+      `,
+      footerNote:
+        "Enviamos este aviso sempre que a palavra-passe de uma conta muda, por segurança.",
+    }),
+    text: plainText(brand, [
+      `Olá, ${props.firstName}.`,
+      "",
+      `A palavra-passe da sua conta foi alterada a ${when}.`,
+      "Não foi você? Recupere já o acesso em “Esqueci-me da palavra-passe” e avise a secretaria da catequese.",
+    ]),
+  };
 }
 
-export function authWelcome(props: {
-  firstName: string;
-  portalUrl: string;
-  roleLabel: string;
-}): RenderedEmail {
-  const subject = "Bem-vindo(a) ao Portal da Catequese";
-  const text = `Olá ${props.firstName},\n\nA sua conta de ${props.roleLabel} está pronta. Aceda: ${props.portalUrl}\n— Portal da Catequese`;
-  const html = mailLayout({
-    preview: "A sua conta está pronta",
-    title: "Bem-vindo(a)",
-    bodyHtml: `
-      ${paragraph(`Olá <strong>${e(props.firstName)}</strong>,`)}
-      ${paragraph(`A sua conta de <strong>${e(props.roleLabel)}</strong> foi criada com sucesso.`)}
-      ${paragraph("Já pode acompanhar matrículas, avisos e o calendário da catequese.")}
-      ${mailButton(props.portalUrl, "Ir para o portal")}
-    `,
-  });
-  return { subject, html, text };
-}
-
-export function portalNotification(props: {
-  firstName: string;
-  title: string;
-  body?: string;
-  linkUrl?: string;
-}): RenderedEmail {
-  const subject = props.title;
-  const text = `Olá ${props.firstName},\n\n${props.title}${props.body ? `\n${props.body}` : ""}${props.linkUrl ? `\n\n${props.linkUrl}` : ""}\n— Portal da Catequese`;
-  const html = mailLayout({
-    preview: props.title,
-    title: props.title,
-    bodyHtml: `
-      ${paragraph(`Olá <strong>${e(props.firstName)}</strong>,`)}
-      ${props.body ? paragraph(e(props.body)) : ""}
-      ${props.linkUrl ? mailButton(props.linkUrl, "Abrir no portal") : ""}
-    `,
-  });
-  return { subject, html, text };
+/** Boas-vindas depois de criar a conta. */
+export function authWelcome(
+  brand: MailBrand,
+  props: { firstName: string; portalUrl: string; roleLabel: string },
+): RenderedEmail {
+  const steps = [
+    ["Matrículas", "inscreva os educandos e acompanhe cada pedido."],
+    ["Avisos", "receba as novidades da coordenação no portal e por email."],
+    ["Calendário", "veja os encontros, as celebrações e as reuniões."],
+  ];
+  const list = steps
+    .map(
+      ([title, text]) =>
+        `<tr><td width="22" style="vertical-align:top;padding:6px 0;font-size:15px;line-height:1.6;color:#c9a54d">&#10003;</td><td style="padding:6px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#33405a" class="body"><strong style="color:#16213a" class="ink">${title}</strong> — ${text}</td></tr>`,
+    )
+    .join("");
+  return {
+    subject: "Bem-vindo(a) ao Portal da Catequese",
+    html: mailLayout({
+      brand,
+      preview: `A sua conta de ${props.roleLabel} está pronta.`,
+      eyebrow: "Conta criada",
+      title: "Bem-vindo(a) ao Portal da Catequese",
+      bodyHtml: `
+        ${greeting(props.firstName)}
+        ${paragraph(`A sua conta de <strong>${e(props.roleLabel)}</strong> está pronta. É um gosto tê-lo(a) connosco na caminhada da catequese.`)}
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:4px 0 8px">${list}</table>
+        ${mailButton(props.portalUrl, "Ir para o portal")}
+      `,
+    }),
+    text: plainText(brand, [
+      `Olá, ${props.firstName}.`,
+      "",
+      `A sua conta de ${props.roleLabel} está pronta.`,
+      "No portal pode fazer matrículas, receber os avisos da coordenação e ver o calendário.",
+      "",
+      `Entrar: ${props.portalUrl}`,
+    ]),
+  };
 }

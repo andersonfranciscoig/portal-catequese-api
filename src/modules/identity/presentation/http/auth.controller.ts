@@ -99,7 +99,9 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Pede a recuperação da palavra-passe" })
   @ApiZodBody(forgotPasswordSchema)
-  async forgotPassword(@Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordBody) {
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordBody,
+  ) {
     await this.requestPasswordReset.execute(body);
   }
 

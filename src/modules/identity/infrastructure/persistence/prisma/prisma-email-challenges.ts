@@ -135,10 +135,7 @@ export class PrismaEmailChallenges extends EmailChallenges {
       where: { email, purpose },
       orderBy: { createdAt: "desc" },
     });
-    if (
-      recent &&
-      this.clock.now().getTime() - recent.createdAt.getTime() < RESEND_COOLDOWN_MS
-    ) {
+    if (recent && this.clock.now().getTime() - recent.createdAt.getTime() < RESEND_COOLDOWN_MS) {
       throw new EmailChallengeRateLimitedError();
     }
   }

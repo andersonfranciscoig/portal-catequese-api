@@ -93,7 +93,10 @@ export class SacramentCandidateNotFoundError extends error(
   "Este catequizando não é candidato a esta celebração no ano em curso.",
 ) {}
 export class InvalidAnnouncementError extends error("validation", "invalid_announcement") {}
-export class InvalidCalendarActivityError extends error("validation", "invalid_calendar_activity") {}
+export class InvalidCalendarActivityError extends error(
+  "validation",
+  "invalid_calendar_activity",
+) {}
 export class CalendarActivityNotFoundError extends error(
   "not_found",
   "calendar_activity_not_found",

@@ -1,4 +1,4 @@
-import { Mailer } from "../application/mailer.js";
+import { Mailer, type AnnouncementMail } from "../application/mailer.js";
 
 export class RecordingMailer extends Mailer {
   readonly registerOtps: { email: string; firstName: string; otp: string }[] = [];
@@ -12,6 +12,12 @@ export class RecordingMailer extends Mailer {
     body?: string;
     link?: string;
   }[] = [];
+
+  readonly announcements: AnnouncementMail[] = [];
+
+  sendAnnouncement(input: AnnouncementMail) {
+    this.announcements.push(input);
+  }
 
   sendRegisterOtp(input: { email: string; firstName: string; otp: string }) {
     this.registerOtps.push(input);

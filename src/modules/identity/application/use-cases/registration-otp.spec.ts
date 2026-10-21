@@ -56,9 +56,9 @@ describe("Registo com OTP e recuperação de conta", () => {
   });
 
   it("o email é obrigatório no registo", async () => {
-    await expect(
-      ctx.requestRegistration.execute({ ...guardianInput, email: "" }),
-    ).rejects.toThrow(EmailRequiredError);
+    await expect(ctx.requestRegistration.execute({ ...guardianInput, email: "" })).rejects.toThrow(
+      EmailRequiredError,
+    );
   });
 
   it("recusa telefone já registado antes de enviar o código", async () => {

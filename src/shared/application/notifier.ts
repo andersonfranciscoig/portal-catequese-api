@@ -15,6 +15,11 @@ export interface NotificationMessage {
   link?: string;
   /** Quem fez a ação não é notificado (ex.: a administração que aprova a si própria). */
   exceptAccountId?: string;
+  /**
+   * Envia também por email a quem tem email (por omissão, sim). `false` fica
+   * só no sino, ex.: quando o módulo já envia um email próprio e mais completo.
+   */
+  email?: boolean;
 }
 
 /**

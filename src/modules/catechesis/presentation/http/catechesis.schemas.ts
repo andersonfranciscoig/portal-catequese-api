@@ -235,7 +235,10 @@ export const publishAnnouncementSchema = z.object({
   body: z.string().trim().min(10).max(600),
   audience: z.enum(["ALL", "GUARDIANS", "CATECHUMENS", "CATECHISTS"]),
   pinned: z.boolean(),
+  /** Avisa no sino de quem o recebe. */
   notify: z.boolean(),
+  /** Envia também o aviso completo por email (por omissão, não). */
+  email: z.boolean().default(false),
 });
 export type PublishAnnouncementBody = z.infer<typeof publishAnnouncementSchema>;
 
@@ -258,8 +261,10 @@ const activityFields = {
   endsOn: isoDate.optional(),
 };
 
-export const calendarActivitySchema = z.object(activityFields).refine(
-  (value) => !value.endsOn || value.endsOn >= value.startsOn,
-  { message: "A data de fim não pode ser anterior ao início.", path: ["endsOn"] },
-);
+export const calendarActivitySchema = z
+  .object(activityFields)
+  .refine((value) => !value.endsOn || value.endsOn >= value.startsOn, {
+    message: "A data de fim não pode ser anterior ao início.",
+    path: ["endsOn"],
+  });
 export type CalendarActivityBody = z.infer<typeof calendarActivitySchema>;

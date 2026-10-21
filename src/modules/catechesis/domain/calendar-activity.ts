@@ -72,11 +72,13 @@ export class CalendarActivity extends AggregateRoot<CalendarActivityProps> {
     return this.props.createdBy;
   }
 
-  change(
-    input: Omit<CalendarActivityProps, "createdAt" | "updatedAt" | "createdBy">,
-    now: Date,
-  ) {
-    const next = checked({ ...input, createdAt: this.props.createdAt, updatedAt: now, createdBy: this.props.createdBy });
+  change(input: Omit<CalendarActivityProps, "createdAt" | "updatedAt" | "createdBy">, now: Date) {
+    const next = checked({
+      ...input,
+      createdAt: this.props.createdAt,
+      updatedAt: now,
+      createdBy: this.props.createdBy,
+    });
     this.props = next;
   }
 }

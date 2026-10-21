@@ -28,10 +28,7 @@ import {
   ListCalendarActivitiesUseCase,
   SaveCalendarActivityUseCase,
 } from "../../application/use-cases/coordination/calendar-activities.use-cases.js";
-import {
-  calendarActivitySchema,
-  type CalendarActivityBody,
-} from "./catechesis.schemas.js";
+import { calendarActivitySchema, type CalendarActivityBody } from "./catechesis.schemas.js";
 
 /** Coordenação: atividades do calendário, além das datas dos sacramentos. */
 @ApiTags("Coordenação — calendário")

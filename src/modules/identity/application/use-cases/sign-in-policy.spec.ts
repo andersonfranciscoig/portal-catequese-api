@@ -58,7 +58,11 @@ describe("Regras de entrada (fase de lançamento, encerramento, bloqueio)", () =
       ctx.authenticate.execute({ identifier: "938728358", password: "catequese1" }),
     ).resolves.toBeTruthy();
     await expect(
-      ctx.register.execute({ ...guardianInput, phone: "925555111", email: undefined }),
+      ctx.register.execute({
+        ...guardianInput,
+        phone: "925555111",
+        email: "ana.silva@exemplo.ao",
+      }),
     ).rejects.toThrow(PortalClosedError);
   });
 

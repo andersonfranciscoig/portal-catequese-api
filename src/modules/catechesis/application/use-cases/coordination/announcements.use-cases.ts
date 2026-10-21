@@ -1,4 +1,5 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { Mailer } from "../../../../../shared/application/mailer.js";
 import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type {
   PeopleDirectory,
@@ -27,17 +28,20 @@ const PORTAL_AUDIENCE = {
 
 export type PortalRole = keyof typeof PORTAL_AUDIENCE;
 
+/** Onde o portal mostra os avisos (para todos os papéis). */
+const PORTAL_LINK = "/portal/catequese";
+
 const normalize = (value: string) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-/** Papéis que uma audiência alcança. `ALL` junta os três. */
-function rolesOf(audience: Audience): PersonSnapshot["roles"][number][] {
-  if (audience === "GUARDIANS") return ["GUARDIAN"];
-  if (audience === "CATECHUMENS") return ["CATECHUMEN"];
-  if (audience === "CATECHISTS") return ["CATECHIST"];
-  return ["GUARDIAN", "CATECHUMEN", "CATECHIST"];
-}
+/** Como o destinatário é tratado no email ("Recebeu este aviso como …"). */
+const AUDIENCE_LABEL: Record<Audience, string> = {
+  ALL: "Membro da comunidade da catequese",
+  GUARDIANS: "Encarregado de educação",
+  CATECHUMENS: "Catequizando",
+  CATECHISTS: "Catequista",
+};
 
-/** Catequista por aprovar só entra se a audiência não for só de catequistas e tiver outro papel. */
+/** Catequista por aprovar só recebe avisos se tiver outro papel (família). */
 function receives(person: PersonSnapshot, audience: Audience) {
   if (audience === "CATECHISTS") return person.approvedCatechist;
   if (audience === "GUARDIANS") return person.roles.includes("GUARDIAN");
@@ -46,10 +50,16 @@ function receives(person: PersonSnapshot, audience: Audience) {
   return family || person.approvedCatechist;
 }
 
-async function recipientIds(people: PeopleDirectory, audience: Audience) {
-  const list = await people.listByRoles(rolesOf(audience));
-  return list.filter((person) => receives(person, audience)).map((person) => person.id);
+/** Contas ativas que podem receber avisos (uma só consulta para todas as audiências). */
+function portalPeople(people: PeopleDirectory) {
+  return people.listByRoles(["GUARDIAN", "CATECHUMEN", "CATECHIST"]);
 }
+
+function recipientsOf(everyone: PersonSnapshot[], audience: Audience) {
+  return everyone.filter((person) => receives(person, audience));
+}
+
+const firstName = (fullName: string) => fullName.trim().split(/\s+/)[0] ?? fullName;
 
 export interface AnnouncementView {
   id: string;
@@ -97,17 +107,19 @@ export class ListAnnouncementsUseCase {
         (audience === "todos" || item.audience === audience) &&
         (!term || normalize(`${item.title} ${item.body}`).includes(term)),
     );
-    const reads = await this.announcements.readCounts(items.map((item) => item.id.value));
-    const totals = new Map<Audience, number>();
-    for (const value of AUDIENCES) totals.set(value, (await recipientIds(this.people, value)).length);
+    const [reads, everyone] = await Promise.all([
+      this.announcements.readCounts(items.map((item) => item.id.value)),
+      portalPeople(this.people),
+    ]);
+    const totals = new Map<Audience, number>(
+      AUDIENCES.map((value) => [value, recipientsOf(everyone, value).length]),
+    );
     return {
-      items: items.map(
-        (item): AnnouncementView => ({
-          ...toPortal(item),
-          recipients: totals.get(item.audience) ?? 0,
-          reads: reads.get(item.id.value) ?? 0,
-        }),
-      ),
+      items: items.map((item): AnnouncementView => ({
+        ...toPortal(item),
+        recipients: totals.get(item.audience) ?? 0,
+        reads: reads.get(item.id.value) ?? 0,
+      })),
       counts: {
         todos: all.length,
         ALL: all.filter((item) => item.audience === "ALL").length,
@@ -126,9 +138,14 @@ export class PublishAnnouncementUseCase {
     private readonly people: PeopleDirectory,
     private readonly activity: ActivityRecorder,
     private readonly notifier: Notifier,
+    private readonly mailer: Mailer,
     private readonly clock: Clock,
   ) {}
 
+  /**
+   * Publica o aviso. `notify` avisa no sino; `email` envia o aviso completo por
+   * email a quem tem email (a quem publica, nunca).
+   */
   async execute(input: {
     actorId: string;
     title: string;
@@ -136,27 +153,50 @@ export class PublishAnnouncementUseCase {
     audience: Audience;
     pinned: boolean;
     notify: boolean;
+    email: boolean;
   }): Promise<AnnouncementView> {
     const item = Announcement.create({ ...input, createdBy: input.actorId, now: this.clock.now() });
     await this.announcements.save(item);
-    const ids = await recipientIds(this.people, item.audience);
-    await this.activity.record({
-      actorId: input.actorId,
-      category: "SETTINGS",
-      action: "catechesis.announcement_published",
-      summary: `Publicou o aviso «${item.title}»`,
-    });
+    const recipients = recipientsOf(await portalPeople(this.people), item.audience);
+    const others = recipients.filter((person) => person.id !== input.actorId);
+
     if (input.notify) {
+      // O email (quando pedido) segue à parte, com o aviso completo.
       await this.notifier.notify({
-        to: { accountIds: ids },
+        to: { accountIds: recipients.map((person) => person.id) },
         kind: "communication.announcement_published",
         title: `Novo aviso: ${item.title}`,
-        body: item.body.slice(0, 140),
-        link: "/portal/catequese",
+        body: item.body.length > 140 ? `${item.body.slice(0, 139)}…` : item.body,
+        link: PORTAL_LINK,
         exceptAccountId: input.actorId,
+        email: false,
       });
     }
-    return { ...toPortal(item), recipients: ids.length, reads: 0 };
+    const emailed = input.email ? others.filter((person) => person.email) : [];
+    for (const person of emailed) {
+      this.mailer.sendAnnouncement({
+        email: person.email!,
+        firstName: firstName(person.fullName),
+        title: item.title,
+        body: item.body,
+        audienceLabel: AUDIENCE_LABEL[item.audience],
+        publishedAt: item.publishedAt,
+        link: PORTAL_LINK,
+      });
+    }
+
+    const channels = [
+      input.notify && "no sino",
+      emailed.length &&
+        `por email a ${emailed.length} ${emailed.length === 1 ? "pessoa" : "pessoas"}`,
+    ].filter(Boolean);
+    await this.activity.record({
+      actorId: input.actorId,
+      category: "COMMUNICATION",
+      action: "communication.announcement_published",
+      summary: `Publicou o aviso «${item.title}»${channels.length ? ` (avisou ${channels.join(" e ")})` : ""}`,
+    });
+    return { ...toPortal(item), recipients: recipients.length, reads: 0 };
   }
 }
 
@@ -168,21 +208,25 @@ export class SetAnnouncementPinnedUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute(input: { actorId: string; id: string; pinned: boolean }): Promise<AnnouncementView> {
+  async execute(input: {
+    actorId: string;
+    id: string;
+    pinned: boolean;
+  }): Promise<AnnouncementView> {
     const item = await this.announcements.findById(UniqueId.from(input.id));
     if (!item) throw new AnnouncementNotFoundError();
     item.setPinned(input.pinned, this.clock.now());
     await this.announcements.save(item);
     await this.activity.record({
       actorId: input.actorId,
-      category: "SETTINGS",
-      action: "catechesis.announcement_pinned",
+      category: "COMMUNICATION",
+      action: "communication.announcement_pinned",
       summary: input.pinned ? `Fixou o aviso «${item.title}»` : `Desafixou o aviso «${item.title}»`,
     });
     const reads = await this.announcements.readCounts([item.id.value]);
     return {
       ...toPortal(item),
-      recipients: (await recipientIds(this.people, item.audience)).length,
+      recipients: recipientsOf(await portalPeople(this.people), item.audience).length,
       reads: reads.get(item.id.value) ?? 0,
     };
   }
@@ -200,8 +244,8 @@ export class DeleteAnnouncementUseCase {
     await this.announcements.delete(item.id);
     await this.activity.record({
       actorId: input.actorId,
-      category: "SETTINGS",
-      action: "catechesis.announcement_deleted",
+      category: "COMMUNICATION",
+      action: "communication.announcement_deleted",
       summary: `Apagou o aviso «${item.title}»`,
     });
   }

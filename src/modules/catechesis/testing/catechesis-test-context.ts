@@ -107,6 +107,7 @@ import {
   InMemoryEvaluationRepository,
   InMemorySacramentRepository,
 } from "../infrastructure/persistence/in-memory/in-memory-catechesis.repositories.js";
+import { RecordingMailer } from "../../../shared/testing/recording-mailer.js";
 import {
   PaymentsLedger,
   type PaymentSnapshot,
@@ -207,6 +208,7 @@ export function createCatechesisTestContext() {
   const announcements = new InMemoryAnnouncementRepository();
   const activities = new InMemoryCalendarActivityRepository();
   const ledger = new FakePaymentsLedger();
+  const mailer = new RecordingMailer();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   let next = 0;
@@ -250,6 +252,7 @@ export function createCatechesisTestContext() {
   people.add({ id: IDS.stranger, fullName: "Rosa Afonso" });
 
   const ctx = {
+    mailer,
     ledger,
     sacramentRepository,
     events,
@@ -437,7 +440,14 @@ export function createCatechesisTestContext() {
     get announcements() {
       return {
         list: new ListAnnouncementsUseCase(announcements, people),
-        publish: new PublishAnnouncementUseCase(announcements, people, activity, notifier, clock),
+        publish: new PublishAnnouncementUseCase(
+          announcements,
+          people,
+          activity,
+          notifier,
+          mailer,
+          clock,
+        ),
         pin: new SetAnnouncementPinnedUseCase(announcements, people, activity, clock),
         remove: new DeleteAnnouncementUseCase(announcements, activity),
         mine: new ListMyAnnouncementsUseCase(announcements, clock),

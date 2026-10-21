@@ -4,6 +4,7 @@ import { ConfigModule } from "./config/config.module.js";
 import { AuditModule } from "./modules/audit/index.js";
 import { CatechesisModule } from "./modules/catechesis/index.js";
 import { IdentityModule } from "./modules/identity/index.js";
+import { MailModule } from "./modules/mail/index.js";
 import { NotificationsModule } from "./modules/notifications/index.js";
 import { PaymentsModule } from "./modules/payments/index.js";
 import { PlatformModule } from "./modules/platform/index.js";
@@ -19,6 +20,7 @@ import {
     ConfigModule,
     DatabaseModule,
     CoreModule,
+    MailModule,
     AuditModule,
     NotificationsModule,
     PlatformModule,

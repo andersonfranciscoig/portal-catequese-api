@@ -163,3 +163,43 @@ export class NotCatechistApproverError extends DomainError {
     super("A sua conta não tem permissão para aprovar catequistas.");
   }
 }
+
+export class EmailRequiredError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "identity.email_required";
+  constructor() {
+    super("O email é obrigatório.");
+  }
+}
+
+export class EmailChallengeInvalidError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "identity.email_challenge_invalid";
+  constructor(message = "Código inválido ou expirado.") {
+    super(message);
+  }
+}
+
+export class EmailChallengeExpiredError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "identity.email_challenge_expired";
+  constructor(message = "Código expirado. Peça um novo código.") {
+    super(message);
+  }
+}
+
+export class EmailChallengeTooManyAttemptsError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "identity.email_challenge_locked";
+  constructor() {
+    super("Demasiadas tentativas. Peça um novo código.");
+  }
+}
+
+export class EmailChallengeRateLimitedError extends DomainError {
+  readonly kind = "rate_limited";
+  readonly code = "identity.email_challenge_rate_limited";
+  constructor() {
+    super("Aguarde um minuto antes de pedir outro código.");
+  }
+}

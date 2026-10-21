@@ -31,7 +31,7 @@ describe("Administração das contas", () => {
       ...guardianInput,
       fullName: "Teresa Domingos",
       phone: "923610204",
-      email: undefined,
+      email: "teresa.domingos@exemplo.ao",
     });
     userId = user.account.id;
     userRefresh = user.refreshToken;
@@ -124,7 +124,7 @@ describe("Administração das contas", () => {
       role: "CATECHIST",
       fullName: "Lucas Pedro",
       phone: "946552310",
-      email: undefined,
+      email: "lucas.pedro@exemplo.ao",
     });
     const view = await ctx.decideCatechist.execute({
       actorId: adminId,

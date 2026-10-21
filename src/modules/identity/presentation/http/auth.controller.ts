@@ -15,9 +15,12 @@ import type { AccessTokenClaims } from "../../application/ports/access-token-iss
 import { AddOwnRoleUseCase } from "../../application/use-cases/add-own-role.use-case.js";
 import { AuthenticateUseCase } from "../../application/use-cases/authenticate.use-case.js";
 import { ChangePasswordUseCase } from "../../application/use-cases/change-password.use-case.js";
+import { ConfirmRegistrationUseCase } from "../../application/use-cases/confirm-registration.use-case.js";
 import { GetCurrentAccountUseCase } from "../../application/use-cases/get-current-account.use-case.js";
 import { RefreshSessionUseCase } from "../../application/use-cases/refresh-session.use-case.js";
-import { RegisterAccountUseCase } from "../../application/use-cases/register-account.use-case.js";
+import { RequestPasswordResetUseCase } from "../../application/use-cases/request-password-reset.use-case.js";
+import { RequestRegistrationUseCase } from "../../application/use-cases/request-registration.use-case.js";
+import { ResetPasswordUseCase } from "../../application/use-cases/reset-password.use-case.js";
 import { SignOutUseCase } from "../../application/use-cases/sign-out.use-case.js";
 import { UpdateProfileUseCase } from "../../application/use-cases/update-profile.use-case.js";
 import { ApiZodBody } from "../../../../shared/presentation/http/api-zod.js";
@@ -26,16 +29,22 @@ import { CurrentAccount } from "./decorators/current-account.decorator.js";
 import {
   addRoleSchema,
   changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   profileSchema,
   refreshSchema,
   registerSchema,
+  resetPasswordSchema,
+  verifyRegistrationSchema,
   type AddRoleBody,
   type ChangePasswordBody,
+  type ForgotPasswordBody,
   type LoginBody,
   type ProfileBody,
   type RefreshBody,
   type RegisterBody,
+  type ResetPasswordBody,
+  type VerifyRegistrationBody,
 } from "./dtos/auth.schemas.js";
 import { AuthGuard } from "./guards/auth.guard.js";
 
@@ -43,7 +52,10 @@ import { AuthGuard } from "./guards/auth.guard.js";
 @Controller("auth")
 export class AuthController {
   constructor(
-    private readonly registerAccount: RegisterAccountUseCase,
+    private readonly requestRegistration: RequestRegistrationUseCase,
+    private readonly confirmRegistration: ConfirmRegistrationUseCase,
+    private readonly requestPasswordReset: RequestPasswordResetUseCase,
+    private readonly resetPassword: ResetPasswordUseCase,
     private readonly authenticate: AuthenticateUseCase,
     private readonly refreshSession: RefreshSessionUseCase,
     private readonly signOut: SignOutUseCase,
@@ -63,15 +75,44 @@ export class AuthController {
     return this.addOwnRole.execute({ accountId: account.accountId, role: body.role });
   }
 
-  /** Cria a conta e devolve logo a sessão. */
+  /** Envia o código de verificação para o email. A conta ainda não é criada. */
   @Post("register")
-  @ApiOperation({ summary: "Cria a conta e devolve a sessão" })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Envia o código de verificação do email" })
   @ApiZodBody(registerSchema)
-  register(
-    @Body(new ZodValidationPipe(registerSchema)) body: RegisterBody,
+  register(@Body(new ZodValidationPipe(registerSchema)) body: RegisterBody) {
+    return this.requestRegistration.execute(body);
+  }
+
+  /** Confirma o código e cria a conta. */
+  @Post("register/verify")
+  @ApiOperation({ summary: "Confirma o email e cria a conta" })
+  @ApiZodBody(verifyRegistrationSchema)
+  verify(
+    @Body(new ZodValidationPipe(verifyRegistrationSchema)) body: VerifyRegistrationBody,
     @Headers("user-agent") userAgent?: string,
   ) {
-    return this.registerAccount.execute({ ...body, userAgent });
+    return this.confirmRegistration.execute({ ...body, userAgent });
+  }
+
+  @Post("password/forgot")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Pede a recuperação da palavra-passe" })
+  @ApiZodBody(forgotPasswordSchema)
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordBody,
+  ) {
+    await this.requestPasswordReset.execute(body);
+  }
+
+  @Post("password/reset")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Define uma nova palavra-passe a partir do email" })
+  @ApiZodBody(resetPasswordSchema)
+  async resetPasswordWithToken(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordBody,
+  ) {
+    await this.resetPassword.execute(body);
   }
 
   @Post("login")

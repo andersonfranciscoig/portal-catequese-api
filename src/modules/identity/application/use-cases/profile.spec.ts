@@ -33,7 +33,12 @@ describe("Perfil e palavra-passe", () => {
   it("não deixa usar o telefone de outra conta", async () => {
     await ctx.seedAccount({ fullName: "Outra Pessoa", phone: "931000001" });
     await expect(
-      ctx.updateProfile.execute({ accountId, fullName: "Anderson Francisco", phone: "931000001" }),
+      ctx.updateProfile.execute({
+        accountId,
+        fullName: "Anderson Francisco",
+        phone: "931000001",
+        email: guardianInput.email,
+      }),
     ).rejects.toThrow(AccountAlreadyExistsError);
   });
 

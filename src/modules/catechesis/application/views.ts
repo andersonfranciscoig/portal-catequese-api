@@ -50,6 +50,9 @@ export interface ClassView {
   room: string;
   capacity: number;
   center: { id: string; name: string };
+  kind: "REGULAR" | "SPECIAL";
+  sacrament?: "BAPTISM" | "FIRST_COMMUNION" | "CONFIRMATION";
+  audience?: "CHILD" | "ADULT";
   catechists: ClassCatechistView[];
   /** Próximo encontro (YYYY-MM-DD), se o ano ainda não acabou. */
   nextSessionDate?: string;
@@ -215,6 +218,9 @@ export async function toClassViews(
     room: klass.room,
     capacity: klass.capacity,
     center: centerRef(klass.centerId),
+    kind: klass.kind,
+    sacrament: klass.sacrament,
+    audience: klass.audience,
     // O principal primeiro.
     catechists: [...klass.catechists]
       .sort((a, b) => Number(b.role === "LEAD") - Number(a.role === "LEAD"))

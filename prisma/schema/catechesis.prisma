@@ -78,6 +78,20 @@ enum ClassCatechistRole {
   @@schema("catechesis")
 }
 
+enum ClassKind {
+  REGULAR
+  SPECIAL
+
+  @@schema("catechesis")
+}
+
+enum ClassAudience {
+  CHILD
+  ADULT
+
+  @@schema("catechesis")
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -214,6 +228,10 @@ model CatechesisClass {
   room             String
   capacity         Int
   centerId         String          @map("center_id") @db.Uuid
+  kind             ClassKind       @default(REGULAR)
+  /// Turma especial: o sacramento que prepara, fora do percurso normal.
+  sacrament        SacramentType?
+  audience         ClassAudience?
   createdAt        DateTime        @map("created_at") @db.Timestamptz(3)
 
   center              Center           @relation(fields: [centerId], references: [id])
@@ -225,7 +243,7 @@ model CatechesisClass {
   celebrations        SacramentCelebrationClass[]
   rollReminders       RollReminder[]
 
-  @@unique([catecheticalYear, level, section, centerId])
+  @@unique([catecheticalYear, level, section, centerId, kind])
   @@index([centerId])
   @@map("classes")
   @@schema("catechesis")
@@ -376,6 +394,8 @@ model SacramentCelebration {
   place            String
   notes            String?
   centerId         String        @map("center_id") @db.Uuid
+  /// Batismo celebrado junto com a Primeira Comunhão.
+  withCommunion    Boolean       @default(false) @map("with_communion")
   createdAt        DateTime      @map("created_at") @db.Timestamptz(3)
   createdBy        String?       @map("created_by") @db.Uuid
   updatedAt        DateTime      @map("updated_at") @db.Timestamptz(3)

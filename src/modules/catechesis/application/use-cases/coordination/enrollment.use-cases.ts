@@ -260,7 +260,9 @@ export class GetEnrollmentDetailUseCase {
     if (!catechumen) throw new EnrollmentNotFoundError();
 
     const options = (await this.classes.listByYear(enrollment.catecheticalYear)).filter(
-      (klass) => klass.level === enrollment.level && klass.centerId === enrollment.centerId,
+      (klass) =>
+        klass.centerId === enrollment.centerId &&
+        (klass.isSpecial || klass.level === enrollment.level),
     );
     const ids = [
       catechumen.guardianAccountId,
@@ -401,11 +403,11 @@ export class EnrollmentActionUseCase {
       case "confirm": {
         const klass = await this.classes.findById(UniqueId.from(action.classId));
         if (!klass) throw new ClassNotFoundError();
-        if (
-          klass.level !== enrollment.level ||
-          klass.catecheticalYear !== enrollment.catecheticalYear
-        ) {
-          throw new InvalidEnrollmentError("A turma tem de ser do mesmo nível e ano da matrícula.");
+        if (klass.catecheticalYear !== enrollment.catecheticalYear) {
+          throw new InvalidEnrollmentError("A turma tem de ser do mesmo ano da matrícula.");
+        }
+        if (!klass.isSpecial && klass.level !== enrollment.level) {
+          throw new InvalidEnrollmentError("A turma tem de ser do mesmo nível da matrícula.");
         }
         if (klass.centerId !== enrollment.centerId) {
           throw new InvalidEnrollmentError("A turma tem de ser do mesmo centro da matrícula.");

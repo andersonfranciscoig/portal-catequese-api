@@ -166,13 +166,15 @@ export class InMemoryClassRepository extends ClassRepository {
     level: string,
     section: string,
     centerId = SEDE_CENTER_ID,
+    kind = "REGULAR",
   ) {
     return [...this.items.values()].some(
       (item) =>
         item.catecheticalYear === catecheticalYear &&
         item.level === level &&
         item.section === section &&
-        item.centerId === centerId,
+        item.centerId === centerId &&
+        item.kind === kind,
     );
   }
   async save(klass: CatechesisClass) {

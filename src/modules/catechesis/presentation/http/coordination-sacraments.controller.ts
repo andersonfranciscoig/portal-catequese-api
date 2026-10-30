@@ -198,7 +198,12 @@ export class CoordinationSacramentsController {
     @Param("classId", ParseUUIDPipe) classId: string,
     @Query(new ZodValidationPipe(classMembersSchema)) query: ClassMembersQuery,
   ) {
-    return this.classMembers.execute({ classId, type: query.type, scope: scopeOf(actor) });
+    return this.classMembers.execute({
+      classId,
+      type: query.type,
+      withCommunion: query.withCommunion === "true",
+      scope: scopeOf(actor),
+    });
   }
 
   @Get(":type/classes")
@@ -208,10 +213,12 @@ export class CoordinationSacramentsController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("type", new ZodValidationPipe(sacramentTypeParam)) type: SacramentType,
     @Query("centerId") centerId?: string,
+    @Query("withCommunion") withCommunion?: string,
   ) {
     return this.selectableClasses.execute({
       type,
       centerId: listedCenter(scopeOf(actor), centerId),
+      withCommunion: withCommunion === "true",
     });
   }
 

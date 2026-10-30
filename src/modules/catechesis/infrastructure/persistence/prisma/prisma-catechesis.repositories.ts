@@ -329,6 +329,9 @@ function toClass(row: ClassRow & { catechists: ClassCatechistRow[] }) {
       room: row.room,
       capacity: row.capacity,
       centerId: row.centerId,
+      kind: row.kind,
+      sacrament: row.sacrament ?? undefined,
+      audience: row.audience ?? undefined,
       catechists: row.catechists.map((item) => ({ accountId: item.accountId, role: item.role })),
       createdAt: row.createdAt,
     },
@@ -404,6 +407,7 @@ export class PrismaClassRepository extends ClassRepository {
     level: string,
     section: string,
     centerId = SEDE_CENTER_ID,
+    kind = "REGULAR",
   ) {
     const count = await this.prisma.catechesisClass.count({
       where: {
@@ -411,6 +415,7 @@ export class PrismaClassRepository extends ClassRepository {
         level: level as ClassRow["level"],
         section,
         centerId,
+        kind: kind as ClassRow["kind"],
       },
     });
     return count > 0;
@@ -425,6 +430,9 @@ export class PrismaClassRepository extends ClassRepository {
       room: klass.room,
       capacity: klass.capacity,
       centerId: klass.centerId,
+      kind: klass.kind,
+      sacrament: klass.sacrament ?? null,
+      audience: klass.audience ?? null,
     };
     // A turma e os catequistas mudam juntos (ou nada muda).
     await this.prisma.$transaction([
@@ -723,6 +731,7 @@ function toCelebration(row: {
   place: string;
   notes: string | null;
   centerId: string;
+  withCommunion: boolean;
   createdAt: Date;
   createdBy: string | null;
   updatedAt: Date;
@@ -741,6 +750,7 @@ function toCelebration(row: {
     place: row.place,
     notes: orUndefined(row.notes),
     centerId: row.centerId,
+    withCommunion: row.withCommunion,
     selection: {
       classIds: row.classes.map((item) => item.classId).sort(),
       catechumenIds: row.catechumens.map((item) => item.catechumenId).sort(),
@@ -874,6 +884,7 @@ export class PrismaSacramentRepository extends SacramentRepository {
       place: celebration.place,
       notes: celebration.notes ?? null,
       centerId: celebration.centerId,
+      withCommunion: celebration.withCommunion === true,
       updatedAt: celebration.updatedAt,
       updatedBy: celebration.updatedBy ?? null,
       completedAt: celebration.completedAt ?? null,

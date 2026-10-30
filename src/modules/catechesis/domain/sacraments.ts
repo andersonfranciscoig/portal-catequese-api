@@ -38,12 +38,42 @@ const FROM_DOCUMENT: Partial<Record<SacramentRequirement, EnrollmentDocumentKind
   BAPTISM_CERTIFICATE: "BAPTISM",
 };
 
-/** Candidatos: o último ano da etapa que prepara o sacramento. */
+/**
+ * Anos que podem receber o sacramento.
+ * Batismo e Comunhão: só o 3.º ano. Crisma: 2.º ou 3.º, porque há centros
+ * em que o crisma acaba no 2.º ano.
+ */
+export const CANDIDATE_LEVELS: Record<SacramentType, readonly CatechesisLevel[]> = {
+  BAPTISM: ["BAPTISM_3"],
+  FIRST_COMMUNION: ["COMMUNION_3"],
+  CONFIRMATION: ["CONFIRMATION_2", "CONFIRMATION_3"],
+};
+
+/** Ano principal (o que os resumos mostram). */
 export const CANDIDATE_LEVEL: Record<SacramentType, CatechesisLevel> = {
   BAPTISM: "BAPTISM_3",
   FIRST_COMMUNION: "COMMUNION_3",
   CONFIRMATION: "CONFIRMATION_3",
 };
+
+/** Batismo com comunhão no mesmo dia também vê as turmas finais da comunhão. */
+export function selectionSacramentTypes(
+  type: SacramentType,
+  withCommunion: boolean,
+): SacramentType[] {
+  if (type === "BAPTISM" && withCommunion) return ["BAPTISM", "FIRST_COMMUNION"];
+  return [type];
+}
+
+export function isCandidateLevel(
+  type: SacramentType,
+  level: CatechesisLevel,
+  withCommunion = false,
+) {
+  return selectionSacramentTypes(type, withCommunion).some((item) =>
+    CANDIDATE_LEVELS[item].includes(level),
+  );
+}
 
 export const REQUIREMENTS: Record<SacramentType, SacramentRequirement[]> = {
   BAPTISM: ["BIRTH_CERTIFICATE", "GODPARENT", "PARENTS_MEETING"],
@@ -81,6 +111,8 @@ export interface SacramentCelebration {
   place: string;
   notes?: string;
   centerId: string;
+  /** Batismo que inclui a Primeira Comunhão no mesmo dia. */
+  withCommunion?: boolean;
   selection: CelebrationSelection;
   createdAt: Date;
   createdBy?: string;

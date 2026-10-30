@@ -4,7 +4,12 @@ import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { CatechesisLevel, SessionSlot } from "../../../domain/catechesis.js";
-import { CatechesisClass, type ClassCatechist } from "../../../domain/catechesis-class.js";
+import {
+  CatechesisClass,
+  type ClassAudience,
+  type ClassCatechist,
+} from "../../../domain/catechesis-class.js";
+import type { SacramentType } from "../../../domain/sacraments.js";
 import { luandaToday } from "../../../domain/dates.js";
 import {
   CalendarNotDefinedError,
@@ -67,7 +72,10 @@ export class ListClassesUseCase {
 
 export interface CreateClassInput {
   actorId: string;
-  level: CatechesisLevel;
+  kind?: "REGULAR" | "SPECIAL";
+  level?: CatechesisLevel;
+  sacrament?: SacramentType;
+  audience?: ClassAudience;
   section: string;
   slot: SessionSlot;
   startTime?: string;
@@ -91,13 +99,44 @@ export class CreateClassUseCase {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     const resolved = await resolveWriteCenter(this.centers!, scope, centerId);
-    const klass = CatechesisClass.create({
-      ...input,
-      centerId: resolved,
-      catecheticalYear: calendar.label,
-      now: this.clock.now(),
-    });
-    if (await this.classes.exists(calendar.label, klass.level, klass.section, klass.centerId)) {
+    const special = input.kind === "SPECIAL";
+    if (special && (!input.sacrament || !input.audience)) {
+      throw new InvalidClassError("Indique o sacramento e se a turma é de crianças ou de adultos.");
+    }
+    if (!special && !input.level) throw new InvalidClassError("Indique o ano da turma.");
+    const klass = special
+      ? CatechesisClass.createSpecial({
+          sacrament: input.sacrament!,
+          audience: input.audience!,
+          section: input.section,
+          slot: input.slot,
+          startTime: input.startTime,
+          room: input.room,
+          capacity: input.capacity,
+          centerId: resolved,
+          catecheticalYear: calendar.label,
+          now: this.clock.now(),
+        })
+      : CatechesisClass.create({
+          level: input.level!,
+          section: input.section,
+          slot: input.slot,
+          startTime: input.startTime,
+          room: input.room,
+          capacity: input.capacity,
+          centerId: resolved,
+          catecheticalYear: calendar.label,
+          now: this.clock.now(),
+        });
+    if (
+      await this.classes.exists(
+        calendar.label,
+        klass.level,
+        klass.section,
+        klass.centerId,
+        klass.kind,
+      )
+    ) {
       throw new ClassAlreadyExistsError();
     }
     await this.classes.save(klass);

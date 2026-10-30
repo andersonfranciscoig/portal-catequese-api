@@ -79,6 +79,7 @@ export abstract class ClassRepository {
     level: string,
     section: string,
     centerId?: string,
+    kind?: string,
   ): Promise<boolean>;
   abstract save(klass: CatechesisClass): Promise<void>;
 }

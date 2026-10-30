@@ -84,18 +84,54 @@ export const calendarSchema = z.object({
 });
 export type CalendarBody = z.infer<typeof calendarSchema>;
 
-export const createClassSchema = z.object({
-  level: z.enum(CatechesisLevel),
-  section: z.string().max(1),
-  slot: z.enum(SessionSlot),
-  startTime: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/)
-    .optional(),
-  room: z.string().max(60),
-  capacity: z.number().int().min(1).max(100),
-  centerId: z.uuid().optional(),
-});
+export const createClassSchema = z
+  .object({
+    kind: z.enum(["REGULAR", "SPECIAL"]).optional(),
+    level: z.enum(CatechesisLevel).optional(),
+    sacrament: z.enum(SacramentType).optional(),
+    audience: z.enum(["CHILD", "ADULT"]).optional(),
+    section: z.string().trim().min(1).max(40),
+    slot: z.enum(SessionSlot),
+    startTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
+    room: z.string().max(60),
+    capacity: z.number().int().min(1).max(100),
+    centerId: z.uuid().optional(),
+  })
+  .superRefine((body, ctx) => {
+    if ((body.kind ?? "REGULAR") === "SPECIAL") {
+      if (!body.sacrament) {
+        ctx.addIssue({ code: "custom", path: ["sacrament"], message: "Indique o sacramento." });
+      }
+      if (!body.audience) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["audience"],
+          message: "Indique se a turma é de crianças ou de adultos.",
+        });
+      }
+      if (body.section.trim().length < 2) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["section"],
+          message: "O nome da turma especial tem entre 2 e 40 caracteres.",
+        });
+      }
+      return;
+    }
+    if (!body.level) {
+      ctx.addIssue({ code: "custom", path: ["level"], message: "Indique o ano da turma." });
+    }
+    if (!/^[A-Za-z]$/.test(body.section)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["section"],
+        message: "A turma é identificada por uma letra (A, B…).",
+      });
+    }
+  });
 export type CreateClassBody = z.infer<typeof createClassSchema>;
 
 export const classCatechistsSchema = z.object({
@@ -243,6 +279,7 @@ const celebrationFields = {
     classIds: z.array(z.uuid()).max(100),
     catechumenIds: z.array(z.uuid()).max(1000),
   }),
+  withCommunion: z.boolean().optional(),
 };
 
 export const createCelebrationSchema = z.object({
@@ -255,7 +292,10 @@ export type CreateCelebrationBody = z.infer<typeof createCelebrationSchema>;
 export const updateCelebrationSchema = z.object(celebrationFields);
 export type UpdateCelebrationBody = z.infer<typeof updateCelebrationSchema>;
 
-export const classMembersSchema = z.object({ type: z.enum(SacramentType) });
+export const classMembersSchema = z.object({
+  type: z.enum(SacramentType),
+  withCommunion: z.enum(["true", "false"]).optional(),
+});
 export type ClassMembersQuery = z.infer<typeof classMembersSchema>;
 
 export const completeCelebrationSchema = z.object({

@@ -29,6 +29,14 @@ const schema = z
     EMAIL_REPLY_TO: z.string().email().default("catequese@cristoreidapaz.ao"),
     EMAIL_API_KEY: z.string().optional(),
     EMAIL_OTP_SECRET: z.string().optional(),
+    /** Web Push (gerar com `npx web-push generate-vapid-keys`). Sem chaves: push desligado. */
+    VAPID_PUBLIC_KEY: z.string().trim().optional(),
+    VAPID_PRIVATE_KEY: z.string().trim().optional(),
+    VAPID_SUBJECT: z
+      .string()
+      .trim()
+      .regex(/^(mailto:|https:\/\/)/, "Use mailto:… ou https://…")
+      .default("mailto:catequese@cristoreidapaz.ao"),
   })
   .refine((env) => env.STORAGE_PROVIDER !== "uploadthing" || Boolean(env.UPLOADTHING_TOKEN), {
     path: ["UPLOADTHING_TOKEN"],
@@ -58,6 +66,8 @@ export class AppConfig {
     apiKey?: string;
     otpSecret?: string;
   };
+  /** Chaves VAPID do Web Push; `null` quando não estão definidas (push desligado). */
+  readonly webPush: { publicKey: string; privateKey: string; subject: string } | null;
 
   constructor(source: Record<string, string | undefined> = process.env) {
     const parsed = schema.safeParse(source);
@@ -90,5 +100,13 @@ export class AppConfig {
       apiKey: env.EMAIL_API_KEY,
       otpSecret: env.EMAIL_OTP_SECRET,
     };
+    this.webPush =
+      env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
+        ? {
+            publicKey: env.VAPID_PUBLIC_KEY,
+            privateKey: env.VAPID_PRIVATE_KEY,
+            subject: env.VAPID_SUBJECT,
+          }
+        : null;
   }
 }

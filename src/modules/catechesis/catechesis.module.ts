@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
+import { CatechesisRelations } from "../../shared/application/catechesis-relations.js";
 import { EventBus } from "../../shared/application/event-bus.js";
 import { FileStorage, UploadPolicy } from "../../shared/application/file-storage.js";
 import { Mailer } from "../../shared/application/mailer.js";
@@ -140,6 +141,7 @@ import { CoordinationCalendarActivitiesController } from "./presentation/http/co
 import { CoordinationReportsController } from "./presentation/http/coordination-reports.controller.js";
 import { CoordinationSacramentsController } from "./presentation/http/coordination-sacraments.controller.js";
 import { TrackEnrollmentUseCase } from "./application/use-cases/public/track-enrollment.use-case.js";
+import { PrismaCatechesisRelations } from "./infrastructure/persistence/prisma/prisma-catechesis-relations.js";
 import { CoordinationController } from "./presentation/http/coordination.controller.js";
 import { FamilyController } from "./presentation/http/family.controller.js";
 
@@ -180,6 +182,8 @@ const ACTIVITIES = CalendarActivityRepository;
     PublicCatechesisController,
   ],
   providers: [
+    // Relações entre contas (contrato partilhado, usado pelas mensagens).
+    { provide: CatechesisRelations, useClass: PrismaCatechesisRelations },
     { provide: CALENDAR, useClass: PrismaCalendarRepository },
     { provide: CATECHUMENS, useClass: PrismaCatechumenRepository },
     { provide: ENROLLMENTS, useClass: PrismaEnrollmentRepository },
@@ -430,5 +434,6 @@ const ACTIVITIES = CalendarActivityRepository;
     provideUseCase(DeleteCalendarActivityUseCase, [ACTIVITIES, AUDIT]),
     provideUseCase(ListPortalCalendarUseCase, [CALENDAR, SACRAMENTS, ACTIVITIES, Clock]),
   ],
+  exports: [CatechesisRelations],
 })
 export class CatechesisModule {}

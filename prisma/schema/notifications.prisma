@@ -17,3 +17,19 @@ model Notification {
   @@map("notifications")
   @@schema("notifications")
 }
+
+/// Subscrição Web Push de um navegador (um dispositivo), ligada a uma conta.
+model PushSubscription {
+  id        String   @id @db.Uuid
+  /// Endereço do serviço de push do navegador (único por dispositivo).
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  accountId String   @map("account_id") @db.Uuid
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @map("created_at") @db.Timestamptz(3)
+
+  @@index([accountId])
+  @@map("push_subscriptions")
+  @@schema("notifications")
+}

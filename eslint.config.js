@@ -11,6 +11,7 @@ const MODULES = [
   "notifications",
   "payments",
   "mail",
+  "messaging",
 ];
 
 const LAYERS = "(domain|application|infrastructure|presentation|testing)";

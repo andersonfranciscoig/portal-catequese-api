@@ -8,6 +8,7 @@ import {
 } from "../../../shared/application/people-directory.js";
 import { FixedClock } from "../../../shared/testing/fixed-clock.js";
 import { RecordingActivity } from "../../../shared/testing/recording-activity.js";
+import { Center } from "../domain/center.js";
 import { CatechesisAccess } from "../application/catechesis-access.js";
 import { CatechistClassResolver } from "../application/catechist-class.js";
 import { EnrollmentCodes } from "../application/enrollment-codes.js";
@@ -95,6 +96,7 @@ import {
 } from "../application/use-cases/family/submit-enrollment.use-case.js";
 import {
   InMemoryAnnouncementRepository,
+  InMemoryCenterRepository,
   InMemoryCalendarActivityRepository,
   InMemoryAttendanceRepository,
   InMemoryCalendarRepository,
@@ -236,6 +238,8 @@ export function createCatechesisTestContext() {
   const recordRepository = new InMemorySacramentRecordRepository();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
+  const centers = new InMemoryCenterRepository();
+  for (const center of Center.seeded(clock.now())) void centers.save(center);
   const sacramentRecords = new SacramentRecords(recordRepository, clock);
   let next = 0;
   const codes = new EnrollmentCodes(enrollments, () => 48_200 + next++);
@@ -289,6 +293,7 @@ export function createCatechesisTestContext() {
     documents,
     storage,
     calendars,
+    centers,
     catechumens,
     enrollments,
     classes,
@@ -322,6 +327,7 @@ export function createCatechesisTestContext() {
       notifier,
       events,
       sacramentRecords,
+      centers,
     ),
     myClass: new GetMyClassUseCase(resolver, attendance, people),
     roll: new GetRollUseCase(resolver, attendance),
@@ -330,7 +336,7 @@ export function createCatechesisTestContext() {
     saveEvaluations: new SaveEvaluationsUseCase(resolver, attendance, evaluations, activity, clock),
     file: new GetClassCatechumenUseCase(resolver, attendance, evaluations, people),
     listClasses: new ListClassesUseCase(classes, enrollments, calendars, people, clock),
-    createClass: new CreateClassUseCase(classes, calendars, people, activity, clock),
+    createClass: new CreateClassUseCase(classes, calendars, people, activity, clock, centers),
     assign: new AssignCatechistsUseCase(
       classes,
       enrollments,
@@ -379,6 +385,7 @@ export function createCatechesisTestContext() {
       activity,
       notifier,
       clock,
+      centers,
     ),
 
     setDeadline: new SetDeadlineUseCase(calendars, activity, clock),
@@ -432,7 +439,7 @@ export function createCatechesisTestContext() {
       recordRepository,
     ),
     setReceivedSacrament: new SetReceivedSacramentUseCase(catechumens, sacramentRecords, activity),
-    setCatechistStatus: new SetCatechistStatusUseCase(people, profiles, activity, clock),
+    setCatechistStatus: new SetCatechistStatusUseCase(people, profiles, activity, clock, centers),
     get catechists() {
       const directory = new CatechistDirectory(
         people,
@@ -471,7 +478,13 @@ export function createCatechesisTestContext() {
           activity,
           clock,
         ),
-        create: new CreateCelebrationUseCase(celebrations, sacramentRepository, activity, clock),
+        create: new CreateCelebrationUseCase(
+          celebrations,
+          sacramentRepository,
+          activity,
+          clock,
+          centers,
+        ),
         update: new UpdateCelebrationUseCase(celebrations, sacramentRepository, activity, clock),
         remove: new DeleteCelebrationUseCase(celebrations, sacramentRepository, activity),
         participants: new ListCelebrationParticipantsUseCase(celebrations),
@@ -533,6 +546,7 @@ export function createCatechesisTestContext() {
           notifier,
           mailer,
           clock,
+          centers,
         ),
         pin: new SetAnnouncementPinnedUseCase(announcements, people, activity, clock),
         remove: new DeleteAnnouncementUseCase(announcements, activity),
@@ -564,7 +578,7 @@ export function createCatechesisTestContext() {
     get generation() {
       const generation = new ClassGeneration(classes, enrollments, calendars, profiles, people);
       return {
-        plan: new PlanClassesUseCase(generation),
+        plan: new PlanClassesUseCase(generation, centers),
         generate: new GenerateClassesUseCase(
           generation,
           classes,
@@ -572,6 +586,7 @@ export function createCatechesisTestContext() {
           ctx.act,
           activity,
           clock,
+          centers,
         ),
       };
     },

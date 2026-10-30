@@ -1,5 +1,21 @@
 import { DomainError, type DomainErrorKind } from "../../../shared/domain/domain-error.js";
 
+export class PaymentCenterForbiddenError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "catechesis.center_forbidden";
+  constructor() {
+    super("Esta área é só do seu centro.");
+  }
+}
+
+export class PaymentParishOnlyError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "catechesis.parish_only";
+  constructor() {
+    super("Só a coordenação da paróquia pode alterar isto.");
+  }
+}
+
 function error(kind: DomainErrorKind, code: string, fallback?: string) {
   return class extends DomainError {
     readonly kind = kind;

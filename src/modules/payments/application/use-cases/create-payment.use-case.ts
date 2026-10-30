@@ -25,6 +25,7 @@ export class CreatePaymentForEnrollmentUseCase {
         purpose: event.purpose,
         amount: prices[event.purpose],
         payerAccountIds: event.payerAccountIds,
+        centerId: event.centerId,
         now: this.clock.now(),
       }),
     );

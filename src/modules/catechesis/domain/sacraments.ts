@@ -80,6 +80,7 @@ export interface SacramentCelebration {
   time?: string;
   place: string;
   notes?: string;
+  centerId: string;
   selection: CelebrationSelection;
   createdAt: Date;
   createdBy?: string;

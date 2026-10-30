@@ -20,6 +20,7 @@ import type {
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { assertSameCenter, matchesCenter, type CenterScope } from "../../center-scope.js";
 import { classLabel, classShortLabel } from "../../messages.js";
 import { toClassViews } from "../../views.js";
 import type { CoordinationClassView } from "./class.use-cases.js";
@@ -69,11 +70,11 @@ export class GetSessionUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute({ date }: { date: string }): Promise<SessionClassView[]> {
+  async execute({ date, centerId }: { date: string; centerId?: string }): Promise<SessionClassView[]> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const classes = (await this.classes.listByYear(calendar.label)).filter((klass) =>
-      calendar.isSessionDate(klass.slot, date),
+    const classes = (await this.classes.listByYear(calendar.label)).filter(
+      (klass) => calendar.isSessionDate(klass.slot, date) && matchesCenter(klass.centerId, centerId),
     );
     const [views, presence] = await Promise.all([
       toClassViews(classes, this.people, calendar, luandaToday(this.clock.now())),
@@ -145,14 +146,17 @@ export class SetCatechistPresenceUseCase {
     classId,
     date,
     status,
+    scope,
   }: {
     actorId: string;
     classId: string;
     date: string;
     status: AttendanceStatus;
+    scope?: CenterScope;
   }): Promise<void> {
     const klass = await this.classes.findById(UniqueId.from(classId));
     if (!klass) throw new ClassNotFoundError();
+    assertSameCenter(scope, klass.centerId);
     const calendar = await this.calendars.get();
     const now = this.clock.now();
     if (!calendar?.isSessionDate(klass.slot, date) || date > luandaToday(now)) {
@@ -189,6 +193,7 @@ export class SetCatechistPresenceUseCase {
           toAccountId: accountId,
           fromAccountId: actorId,
           body,
+          centerId: klass.centerId,
         });
         link = `/portal/mensagens?c=${conversationId}`;
       } catch {

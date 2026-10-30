@@ -37,6 +37,8 @@ export const Permission = {
   SUPER_ADMIN: "SUPER_ADMIN",
   /** Área da coordenação. */
   COORDINATION: "COORDINATION",
+  /** Vê e gere a paróquia inteira. Requer coordenação. Sem isto, a coordenação é de um centro. */
+  GENERAL_COORDINATION: "GENERAL_COORDINATION",
   /** Menu financeiro. Requer coordenação. */
   FINANCE: "FINANCE",
   /** Matrículas e confirmações fora do prazo. Requer coordenação. */
@@ -51,7 +53,18 @@ export const ALL_PERMISSIONS = Object.values(Permission);
 
 /** Permissões que só fazem sentido com acesso à coordenação. */
 export const COORDINATION_PERMISSIONS: readonly Permission[] = [
+  Permission.GENERAL_COORDINATION,
   Permission.FINANCE,
   Permission.LATE_ENROLLMENT,
   Permission.APPROVE_CATECHISTS,
 ];
+
+/**
+ * Contas que já tinham coordenação passam a gerais (o que a migração grava).
+ * Super admin não precisa da flag: já vê a paróquia inteira.
+ */
+export function grantGeneralCoordination(permissions: readonly Permission[]): Permission[] {
+  if (!permissions.includes(Permission.COORDINATION)) return [...permissions];
+  if (permissions.includes(Permission.GENERAL_COORDINATION)) return [...permissions];
+  return [...permissions, Permission.GENERAL_COORDINATION];
+}

@@ -21,6 +21,8 @@ export interface AccountView {
   blockedReason?: string;
   blockedAt?: string;
   betaAccess: boolean;
+  /** Centro da coordenação; nulo quando vê a paróquia inteira ou não é coordenação. */
+  coordinationCenterId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +45,7 @@ export function toAccountView(account: Account): AccountView {
     blockedReason: account.blockedReason,
     blockedAt: account.blockedAt?.toISOString(),
     betaAccess: account.betaAccess,
+    coordinationCenterId: account.coordinationCenterId,
     createdAt: account.createdAt.toISOString(),
     updatedAt: account.updatedAt.toISOString(),
   };

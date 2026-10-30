@@ -30,10 +30,12 @@ import type {
   AttendanceRepository,
   CalendarRepository,
   CatechumenRepository,
+  CenterRepository,
   ClassRepository,
   EnrollmentRepository,
   EvaluationRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { resolveWriteCenter, type CenterScope } from "../../center-scope.js";
 import type { CatechesisAccess } from "../../catechesis-access.js";
 import type { EnrollmentCodes } from "../../enrollment-codes.js";
 
@@ -228,6 +230,8 @@ export interface ConfirmInput {
   assisted?: boolean;
   /** Fora do prazo (coordenação com permissão "fora do prazo"). */
   allowLate?: boolean;
+  centerId?: string;
+  scope?: CenterScope;
 }
 
 /**
@@ -246,6 +250,7 @@ export class ConfirmEnrollmentUseCase {
     private readonly activity: ActivityRecorder,
     private readonly notifier: Notifier,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
   async execute({
@@ -254,6 +259,8 @@ export class ConfirmEnrollmentUseCase {
     preferredSlot,
     assisted,
     allowLate,
+    centerId,
+    scope,
   }: ConfirmInput): Promise<ConfirmationReceiptView> {
     if (!assisted) await this.access.applicant(actorId);
     const previous = await this.enrollments.findById(UniqueId.from(previousEnrollmentId));
@@ -283,6 +290,10 @@ export class ConfirmEnrollmentUseCase {
     const calendar = (await this.calendars.get())!;
     const now = this.clock.now();
     if (!allowLate) calendar.assertOpen("CONFIRMATION", luandaToday(now));
+    const resolved =
+      scope || centerId
+        ? await resolveWriteCenter(this.centers, scope, centerId)
+        : previous.centerId;
     const enrollment = Enrollment.confirmFromPrevious({
       previous,
       code: await this.codes.next(Number(calendar.label.slice(0, 4))),
@@ -291,8 +302,11 @@ export class ConfirmEnrollmentUseCase {
       level: candidate.nextLevel,
       preferredSlot,
       submittedBy: actorId,
+      centerId: resolved,
       now,
     });
+    catechumen.placeAt(resolved, now);
+    await this.catechumens.save(catechumen);
     await this.enrollments.save(enrollment);
     await this.events.publish([new EnrollmentSubmitted(enrollment, catechumen)]);
     await this.activity.record({

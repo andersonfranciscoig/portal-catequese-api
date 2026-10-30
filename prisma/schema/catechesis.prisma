@@ -27,6 +27,13 @@ enum SessionSlot {
   @@schema("catechesis")
 }
 
+enum CenterStatus {
+  ACTIVE
+  INACTIVE
+
+  @@schema("catechesis")
+}
+
 enum Gender {
   MALE
   FEMALE
@@ -104,6 +111,26 @@ model CatecheticalCalendar {
   @@schema("catechesis")
 }
 
+/// Centro de catequese. Não se apaga: passa a inativo.
+model Center {
+  id        String       @id @db.Uuid
+  name      String
+  location  String
+  status    CenterStatus
+  createdAt DateTime     @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime     @map("updated_at") @db.Timestamptz(3)
+
+  catechumens   Catechumen[]
+  enrollments   Enrollment[]
+  classes       CatechesisClass[]
+  profiles      CatechistProfile[]
+  celebrations  SacramentCelebration[]
+  announcements Announcement[]
+
+  @@map("centers")
+  @@schema("catechesis")
+}
+
 model Catechumen {
   id                   String                @id @db.Uuid
   fullName             String                @map("full_name")
@@ -117,9 +144,11 @@ model Catechumen {
   guardianRelationship GuardianRelationship? @map("guardian_relationship")
   /// Conta própria (adultos inscritos por si).
   accountId            String?               @map("account_id") @db.Uuid
+  centerId             String                @map("center_id") @db.Uuid
   createdAt            DateTime              @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime              @map("updated_at") @db.Timestamptz(3)
 
+  center      Center                    @relation(fields: [centerId], references: [id])
   enrollments     Enrollment[]
   sacramentChecks SacramentRequirementCheck[]
   celebrations    SacramentCelebrationCatechumen[]
@@ -127,6 +156,7 @@ model Catechumen {
 
   @@index([guardianAccountId])
   @@index([accountId])
+  @@index([centerId])
   @@map("catechumens")
   @@schema("catechesis")
 }
@@ -143,6 +173,7 @@ model Enrollment {
   previousParish       String?          @map("previous_parish")
   notes                String?
   submittedBy          String           @map("submitted_by") @db.Uuid
+  centerId             String           @map("center_id") @db.Uuid
   submittedAt          DateTime         @map("submitted_at") @db.Timestamptz(3)
   classId              String?          @map("class_id") @db.Uuid
   decidedBy            String?          @map("decided_by") @db.Uuid
@@ -161,10 +192,12 @@ model Enrollment {
 
   catechumen Catechumen       @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
   klass      CatechesisClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  center     Center           @relation(fields: [centerId], references: [id])
 
   /// Uma matrícula por catequizando em cada ano.
   @@unique([catechumenId, catecheticalYear])
   @@index([catecheticalYear, status])
+  @@index([centerId])
   @@index([classId])
   @@index([submittedBy])
   @@map("enrollments")
@@ -180,8 +213,10 @@ model CatechesisClass {
   startTime        String?         @map("start_time")
   room             String
   capacity         Int
+  centerId         String          @map("center_id") @db.Uuid
   createdAt        DateTime        @map("created_at") @db.Timestamptz(3)
 
+  center              Center           @relation(fields: [centerId], references: [id])
   catechists          ClassCatechist[]
   enrollments         Enrollment[]
   attendance          AttendanceRecord[]
@@ -190,7 +225,8 @@ model CatechesisClass {
   celebrations        SacramentCelebrationClass[]
   rollReminders       RollReminder[]
 
-  @@unique([catecheticalYear, level, section])
+  @@unique([catecheticalYear, level, section, centerId])
+  @@index([centerId])
   @@map("classes")
   @@schema("catechesis")
 }
@@ -281,9 +317,13 @@ enum CatechistStatus {
 model CatechistProfile {
   accountId String           @id @map("account_id") @db.Uuid
   status    CatechistStatus?
+  centerId  String           @map("center_id") @db.Uuid
   updatedAt DateTime         @map("updated_at") @db.Timestamptz(3)
   updatedBy String?          @map("updated_by") @db.Uuid
 
+  center Center @relation(fields: [centerId], references: [id])
+
+  @@index([centerId])
   @@map("catechist_profiles")
   @@schema("catechesis")
 }
@@ -335,6 +375,7 @@ model SacramentCelebration {
   time             String?
   place            String
   notes            String?
+  centerId         String        @map("center_id") @db.Uuid
   createdAt        DateTime      @map("created_at") @db.Timestamptz(3)
   createdBy        String?       @map("created_by") @db.Uuid
   updatedAt        DateTime      @map("updated_at") @db.Timestamptz(3)
@@ -343,11 +384,13 @@ model SacramentCelebration {
   completedAt      DateTime?     @map("completed_at") @db.Timestamptz(3)
   completedBy      String?       @map("completed_by") @db.Uuid
 
+  center      Center                           @relation(fields: [centerId], references: [id])
   classes     SacramentCelebrationClass[]
   catechumens SacramentCelebrationCatechumen[]
   records     SacramentRecord[]
 
   @@index([catecheticalYear, type, date])
+  @@index([centerId])
   @@map("sacrament_celebrations")
   @@schema("catechesis")
 }
@@ -457,9 +500,12 @@ model Announcement {
   updatedAt   DateTime             @map("updated_at") @db.Timestamptz(3)
   /// Conta da coordenação que publicou. Sem chave estrangeira para a identidade.
   createdBy   String               @map("created_by") @db.Uuid
+  centerId    String               @map("center_id") @db.Uuid
   reads       AnnouncementRead[]
+  center      Center               @relation(fields: [centerId], references: [id])
 
   @@index([publishedAt(sort: Desc)])
+  @@index([centerId])
   @@map("announcements")
   @@schema("catechesis")
 }

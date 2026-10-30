@@ -1,3 +1,4 @@
+import { centerRef } from "../../../shared/domain/parish-centers.js";
 import type { BankAccount } from "../domain/bank-account.js";
 import type { Payment } from "../domain/payment.js";
 
@@ -20,6 +21,7 @@ export interface PaymentView {
   paidAt?: string;
   reviewNote?: string;
   registeredByCoordination: boolean;
+  center: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -55,6 +57,7 @@ export function toPaymentView(payment: Payment): PaymentView {
     paidAt: payment.paidAt?.toISOString(),
     reviewNote: payment.reviewNote,
     registeredByCoordination: payment.registeredByCoordination,
+    center: centerRef(payment.centerId),
     createdAt: payment.createdAt.toISOString(),
     updatedAt: payment.updatedAt.toISOString(),
   };

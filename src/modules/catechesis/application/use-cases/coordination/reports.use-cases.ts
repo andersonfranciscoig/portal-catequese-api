@@ -14,6 +14,7 @@ import {
   type EnrollmentStatus,
 } from "../../../domain/catechesis.js";
 import { luandaToday } from "../../../domain/dates.js";
+import { matchesCenter } from "../../center-scope.js";
 import {
   CalendarNotDefinedError,
   ReportNotAllowedError,
@@ -98,7 +99,13 @@ export class GetReportUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute({ canSeeFinance }: { canSeeFinance: boolean }): Promise<ReportView> {
+  async execute({
+    canSeeFinance,
+    centerId,
+  }: {
+    canSeeFinance: boolean;
+    centerId?: string;
+  }): Promise<ReportView> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     const today = luandaToday(this.clock.now());
@@ -106,20 +113,22 @@ export class GetReportUseCase {
       this.enrollments.list({ catecheticalYear: calendar.label }),
       this.classes.listByYear(calendar.label),
     ]);
-    const active = all.filter((item) => ACTIVE.includes(item.status));
-    const confirmed = all.filter((item) => item.isConfirmed);
+    const visible = all.filter((item) => matchesCenter(item.centerId, centerId));
+    const visibleClasses = classes.filter((item) => matchesCenter(item.centerId, centerId));
+    const active = visible.filter((item) => ACTIVE.includes(item.status));
+    const confirmed = visible.filter((item) => item.isConfirmed);
 
     const levels = new Map<CatechesisLevel, number>();
     for (const item of active) levels.set(item.level, (levels.get(item.level) ?? 0) + 1);
 
-    const occupancy = classes.map(
+    const occupancy = visibleClasses.map(
       (klass) =>
         confirmed.filter((item) => item.classId === klass.id.value).length / klass.capacity,
     );
 
     // Presenças: todas as chamadas lançadas do ano, agrupadas por dia.
     const rolls = (
-      await Promise.all(classes.map((klass) => this.attendance.listForClass(klass.id.value)))
+      await Promise.all(visibleClasses.map((klass) => this.attendance.listForClass(klass.id.value)))
     ).flat();
     const perDay = new Map<string, { present: number; total: number }>();
     for (const roll of rolls.filter((item) => item.date <= today)) {
@@ -144,7 +153,7 @@ export class GetReportUseCase {
       catecheticalYear: calendar.label,
       stats: { catechumens: active.length, confirmed: confirmed.length },
       classes: {
-        total: classes.length,
+        total: visibleClasses.length,
         averageOccupancy: occupancy.length
           ? Math.round((occupancy.reduce((sum, ratio) => sum + ratio, 0) / occupancy.length) * 100)
           : 0,
@@ -154,7 +163,9 @@ export class GetReportUseCase {
       attendanceRate: marked ? Math.round((present / marked) * 100) : undefined,
       results: await this.previousResults(previousYearLabel(calendar.label)),
       payments: canSeeFinance
-        ? summarizePayments(await this.ledger.listForEnrollments(all.map((item) => item.id.value)))
+        ? summarizePayments(
+            await this.ledger.listForEnrollments(visible.map((item) => item.id.value)),
+          )
         : null,
     };
   }
@@ -254,9 +265,11 @@ export class ExportReportUseCase {
   async execute({
     kind,
     canSeeFinance,
+    centerId,
   }: {
     kind: ReportExport;
     canSeeFinance: boolean;
+    centerId?: string;
   }): Promise<ReportTable> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
@@ -264,7 +277,11 @@ export class ExportReportUseCase {
 
     switch (kind) {
       case "catechumens": {
-        const { items } = await this.listCatechumens.execute({ page: 1, pageSize: 100_000 });
+        const { items } = await this.listCatechumens.execute({
+          page: 1,
+          pageSize: 100_000,
+          centerId,
+        });
         return {
           filename: `catequizandos-${year}.csv`,
           header: [
@@ -288,7 +305,7 @@ export class ExportReportUseCase {
         };
       }
       case "classes": {
-        const classes = await this.listClasses.execute();
+        const classes = await this.listClasses.execute({ centerId });
         return {
           filename: `turmas-${year}.csv`,
           header: ["Turma", "Horário", "Sala", "Catequistas", "Inscritos", "Capacidade"],
@@ -343,7 +360,9 @@ export class ExportReportUseCase {
       }
       case "payments": {
         if (!canSeeFinance) throw new ReportNotAllowedError();
-        const enrollments = await this.enrollments.list({ catecheticalYear: calendar.label });
+        const enrollments = (
+          await this.enrollments.list({ catecheticalYear: calendar.label })
+        ).filter((item) => matchesCenter(item.centerId, centerId));
         const payments = await this.ledger.listForEnrollments(
           enrollments.map((item) => item.id.value),
         );

@@ -18,7 +18,13 @@ import { GetAccountUseCase } from "../application/use-cases/admin/get-account.us
 import { GrantBetaAccessByContactUseCase } from "../application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "../application/use-cases/admin/list-accounts.use-case.js";
 import { ListCatechistApplicationsUseCase } from "../application/use-cases/admin/list-catechist-applications.use-case.js";
+import { CoordinationCenterLookup } from "../application/ports/coordination-center-lookup.js";
 import { SetAccountPermissionsUseCase } from "../application/use-cases/admin/set-account-permissions.use-case.js";
+import {
+  SANTA_TERESINHA_CENTER_ID,
+  SANTO_EXPEDITO_CENTER_ID,
+  SEDE_CENTER_ID,
+} from "../../../shared/domain/parish-centers.js";
 import { SetBetaAccessUseCase } from "../application/use-cases/admin/set-beta-access.use-case.js";
 import { SetAccountRolesUseCase } from "../application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "../application/use-cases/admin/unblock-account.use-case.js";
@@ -133,7 +139,13 @@ export function createIdentityTestContext() {
     listAccounts: new ListAccountsUseCase(accounts),
     getAccount: new GetAccountUseCase(accounts),
     stats: new GetAccountStatsUseCase(accounts),
-    setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock, notifier),
+    setPermissions: new SetAccountPermissionsUseCase(
+      accounts,
+      activity,
+      clock,
+      notifier,
+      new InMemoryCoordinationCenterLookup(),
+    ),
     block: new BlockAccountUseCase(accounts, sessions, activity, clock),
     unblock: new UnblockAccountUseCase(accounts, activity, clock, notifier),
     catechistApplications: new ListCatechistApplicationsUseCase(accounts),
@@ -151,3 +163,9 @@ export const guardianInput = {
   email: "Anderson.Francisco@Gmail.com",
   password: "catequese1",
 };
+
+class InMemoryCoordinationCenterLookup extends CoordinationCenterLookup {
+  async exists(id: string) {
+    return [SEDE_CENTER_ID, SANTA_TERESINHA_CENTER_ID, SANTO_EXPEDITO_CENTER_ID].includes(id);
+  }
+}

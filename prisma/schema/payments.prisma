@@ -56,6 +56,8 @@ model Payment {
   id                       String         @id @db.Uuid
   /// Matrícula a que respeita (módulo da catequese; sem chave estrangeira).
   enrollmentId             String         @unique @map("enrollment_id") @db.Uuid
+  /// Centro da matrícula no momento do pagamento (sem chave estrangeira entre esquemas).
+  centerId                 String         @map("center_id") @db.Uuid
   enrollmentCode           String         @map("enrollment_code")
   catechumenName           String         @map("catechumen_name")
   purpose                  PaymentPurpose
@@ -79,6 +81,7 @@ model Payment {
 
   @@index([enrollmentCode])
   @@index([status, createdAt])
+  @@index([centerId])
   @@map("payments")
   @@schema("payments")
 }

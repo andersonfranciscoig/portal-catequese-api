@@ -1,6 +1,7 @@
 import type { StoredFile } from "../../../shared/application/file-storage.js";
 import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
+import { SEDE_CENTER_ID } from "../../../shared/domain/parish-centers.js";
 import { InvalidPaymentStateError } from "./errors.js";
 
 type ValueOf<T> = T[keyof T];
@@ -34,6 +35,7 @@ export interface PaymentProof {
 
 export interface PaymentProps {
   enrollmentId: string;
+  centerId: string;
   enrollmentCode: string;
   catechumenName: string;
   purpose: PaymentPurpose;
@@ -65,11 +67,12 @@ export class Payment extends AggregateRoot<PaymentProps> {
       | "purpose"
       | "amount"
       | "payerAccountIds"
-    > & { now: Date },
+    > & { now: Date; centerId?: string },
   ): Payment {
     const { now, ...rest } = props;
     return new Payment({
       ...rest,
+      centerId: rest.centerId ?? SEDE_CENTER_ID,
       payerAccountIds: [...new Set(rest.payerAccountIds)],
       status: P.AWAITING_PAYMENT,
       registeredByCoordination: false,
@@ -84,6 +87,9 @@ export class Payment extends AggregateRoot<PaymentProps> {
 
   get enrollmentId() {
     return this.props.enrollmentId;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
   get enrollmentCode() {
     return this.props.enrollmentCode;

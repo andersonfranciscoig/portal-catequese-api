@@ -65,6 +65,7 @@ import {
   type RequirementBody,
   type UpdateCelebrationBody,
 } from "./catechesis.schemas.js";
+import { listedCenter, scopeOf } from "./http-center.js";
 
 /** Coordenação: celebrações do ano (várias por sacramento), participantes e requisitos. */
 @ApiTags("Coordenação — sacramentos")
@@ -92,16 +93,22 @@ export class CoordinationSacramentsController {
   @ApiOperation({
     summary: "Celebrações do ano e, por sacramento, candidatos e quem tem celebração",
   })
-  getOverview() {
-    return this.overview.execute();
+  getOverview(@CurrentAccount() actor: AccessTokenClaims, @Query("centerId") centerId?: string) {
+    return this.overview.execute({ centerId: listedCenter(scopeOf(actor), centerId) });
   }
 
   // Antes de `:type/...` (senão "records" seria lido como sacramento).
   @Get("records")
   @ApiOperation({ summary: "Sacramentos realizados (filtros, pesquisa, páginas até 1000)" })
   @ApiZodQuery(sacramentRecordsSchema)
-  listRecords(@Query(new ZodValidationPipe(sacramentRecordsSchema)) query: SacramentRecordsQuery) {
-    return this.records.execute(query);
+  listRecords(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(sacramentRecordsSchema)) query: SacramentRecordsQuery,
+  ) {
+    return this.records.execute({
+      ...query,
+      centerId: listedCenter(scopeOf(actor), query.centerId),
+    });
   }
 
   @Get("records/summary")
@@ -142,7 +149,7 @@ export class CoordinationSacramentsController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(createCelebrationSchema)) body: CreateCelebrationBody,
   ) {
-    return this.createCelebration.execute({ ...body, actorId: actor.accountId });
+    return this.createCelebration.execute({ ...body, actorId: actor.accountId, scope: scopeOf(actor) });
   }
 
   @Put("celebrations/:id")
@@ -154,7 +161,12 @@ export class CoordinationSacramentsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(updateCelebrationSchema)) body: UpdateCelebrationBody,
   ) {
-    return this.updateCelebration.execute({ ...body, id, actorId: actor.accountId });
+    return this.updateCelebration.execute({
+      ...body,
+      id,
+      actorId: actor.accountId,
+      scope: scopeOf(actor),
+    });
   }
 
   @Delete("celebrations/:id")
@@ -162,7 +174,7 @@ export class CoordinationSacramentsController {
   @ApiOperation({ summary: "Apaga uma celebração" })
   @ApiParam({ name: "id", format: "uuid" })
   async remove(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
-    await this.deleteCelebration.execute({ actorId: actor.accountId, id });
+    await this.deleteCelebration.execute({ actorId: actor.accountId, id, scope: scopeOf(actor) });
   }
 
   @Get("celebrations/:id/participants")
@@ -170,10 +182,11 @@ export class CoordinationSacramentsController {
   @ApiParam({ name: "id", format: "uuid" })
   @ApiZodQuery(candidateListSchema)
   listParticipants(
+    @CurrentAccount() actor: AccessTokenClaims,
     @Param("id", ParseUUIDPipe) id: string,
     @Query(new ZodValidationPipe(candidateListSchema)) query: CandidateListQuery,
   ) {
-    return this.participants.execute({ id, ...query });
+    return this.participants.execute({ id, ...query, scope: scopeOf(actor) });
   }
 
   @Get("classes/:classId/members")
@@ -181,17 +194,25 @@ export class CoordinationSacramentsController {
   @ApiParam({ name: "classId", format: "uuid" })
   @ApiZodQuery(classMembersSchema)
   members(
+    @CurrentAccount() actor: AccessTokenClaims,
     @Param("classId", ParseUUIDPipe) classId: string,
     @Query(new ZodValidationPipe(classMembersSchema)) query: ClassMembersQuery,
   ) {
-    return this.classMembers.execute({ classId, type: query.type });
+    return this.classMembers.execute({ classId, type: query.type, scope: scopeOf(actor) });
   }
 
   @Get(":type/classes")
   @ApiOperation({ summary: "Turmas do ano para escolher (as do nível candidato primeiro)" })
   @ApiParam({ name: "type", enum: SACRAMENT_TYPES })
-  classes(@Param("type", new ZodValidationPipe(sacramentTypeParam)) type: SacramentType) {
-    return this.selectableClasses.execute({ type });
+  classes(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Param("type", new ZodValidationPipe(sacramentTypeParam)) type: SacramentType,
+    @Query("centerId") centerId?: string,
+  ) {
+    return this.selectableClasses.execute({
+      type,
+      centerId: listedCenter(scopeOf(actor), centerId),
+    });
   }
 
   @Get(":type/candidates")

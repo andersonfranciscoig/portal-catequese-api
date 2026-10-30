@@ -20,12 +20,14 @@ import { fileResponse } from "../../../../shared/presentation/http/uploaded-file
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import {
   AuthGuard,
+  centerScopeFromAccess,
   CurrentAccount,
   Permission,
   PermissionsGuard,
   RequirePermissions,
   type AccessTokenClaims,
 } from "../../../identity/index.js";
+import { PaymentCenterForbiddenError } from "../../domain/errors.js";
 import { ReadProofUseCase } from "../../application/use-cases/family-payments.use-cases.js";
 import {
   DeleteBankAccountUseCase,
@@ -44,6 +46,20 @@ import {
   type BankAccountBody,
   type PaymentListQuery,
 } from "./payments.schemas.js";
+
+function scopeOf(account: AccessTokenClaims) {
+  return centerScopeFromAccess({
+    permissions: account.permissions,
+    coordinationCenterId: account.coordinationCenterId,
+  });
+}
+
+function listedCenter(account: AccessTokenClaims, queryCenterId?: string) {
+  const scope = scopeOf(account);
+  if (scope.kind === "parish") return queryCenterId;
+  if (queryCenterId && queryCenterId !== scope.centerId) throw new PaymentCenterForbiddenError();
+  return scope.centerId;
+}
 
 /** Menu Financeiro da coordenação: validar pagamentos, preços e contas. */
 @ApiTags("Coordenação — financeiro")
@@ -65,8 +81,14 @@ export class FinanceController {
   @Get("payments")
   @ApiOperation({ summary: "Pagamentos (filtros) e resumo" })
   @ApiZodQuery(paymentListSchema)
-  payments(@Query(new ZodValidationPipe(paymentListSchema)) query: PaymentListQuery) {
-    return this.listPayments.execute(query);
+  payments(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(paymentListSchema)) query: PaymentListQuery,
+  ) {
+    return this.listPayments.execute({
+      ...query,
+      centerId: listedCenter(actor, query.centerId),
+    });
   }
 
   @Get("payments/:id/proof")
@@ -86,6 +108,7 @@ export class FinanceController {
       actorId: actor.accountId,
       paymentId: id,
       review: { kind: "approve" },
+      scope: scopeOf(actor),
     });
   }
 
@@ -103,6 +126,7 @@ export class FinanceController {
       actorId: actor.accountId,
       paymentId: id,
       review: { kind: "reject", reason: body.reason },
+      scope: scopeOf(actor),
     });
   }
 
@@ -115,6 +139,7 @@ export class FinanceController {
       actorId: actor.accountId,
       paymentId: id,
       review: { kind: "cash" },
+      scope: scopeOf(actor),
     });
   }
 
@@ -133,7 +158,12 @@ export class FinanceController {
     @Param("purpose", new ZodValidationPipe(purposeParam)) purpose: "ENROLLMENT" | "CONFIRMATION",
     @Body(new ZodValidationPipe(priceSchema)) body: { amount: number },
   ) {
-    return this.setPrice.execute({ actorId: actor.accountId, purpose, amount: body.amount });
+    return this.setPrice.execute({
+      actorId: actor.accountId,
+      purpose,
+      amount: body.amount,
+      scope: scopeOf(actor),
+    });
   }
 
   @Post("bank-accounts")
@@ -143,7 +173,7 @@ export class FinanceController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(bankAccountSchema)) body: BankAccountBody,
   ) {
-    return this.saveAccount.execute({ actorId: actor.accountId, data: body });
+    return this.saveAccount.execute({ actorId: actor.accountId, data: body, scope: scopeOf(actor) });
   }
 
   @Put("bank-accounts/:id")
@@ -155,7 +185,12 @@ export class FinanceController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(bankAccountSchema)) body: BankAccountBody,
   ) {
-    return this.saveAccount.execute({ actorId: actor.accountId, id, data: body });
+    return this.saveAccount.execute({
+      actorId: actor.accountId,
+      id,
+      data: body,
+      scope: scopeOf(actor),
+    });
   }
 
   @Delete("bank-accounts/:id")
@@ -166,6 +201,6 @@ export class FinanceController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("id", ParseUUIDPipe) id: string,
   ) {
-    await this.deleteAccount.execute({ actorId: actor.accountId, id });
+    await this.deleteAccount.execute({ actorId: actor.accountId, id, scope: scopeOf(actor) });
   }
 }

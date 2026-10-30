@@ -47,6 +47,7 @@ export const submitEnrollmentSchema = z.object({
     notes: optionalText(1000),
   }),
   documentsInPerson: z.boolean().optional(),
+  centerId: z.uuid().optional(),
 });
 export type SubmitEnrollmentBody = z.infer<typeof submitEnrollmentSchema>;
 
@@ -93,6 +94,7 @@ export const createClassSchema = z.object({
     .optional(),
   room: z.string().max(60),
   capacity: z.number().int().min(1).max(100),
+  centerId: z.uuid().optional(),
 });
 export type CreateClassBody = z.infer<typeof createClassSchema>;
 
@@ -119,6 +121,7 @@ export const enrollmentListSchema = z.object({
   sort: z.enum(["recentes", "antigas", "nome"]).default("recentes"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  centerId: z.uuid().optional(),
 });
 export type EnrollmentListQuery = z.infer<typeof enrollmentListSchema>;
 
@@ -139,6 +142,7 @@ export const documentKindSchema = z.object({ kind: z.enum(["ID", "BAPTISM", "PHO
 export const confirmSchema = z.object({
   previousEnrollmentId: z.uuid(),
   preferredSlot: z.enum(SessionSlot),
+  centerId: z.uuid().optional(),
 });
 export type ConfirmBody = z.infer<typeof confirmSchema>;
 
@@ -158,11 +162,13 @@ export const classListSchema = z.object({
     .string()
     .regex(/^\d{4}\/\d{4}$/)
     .optional(),
+  centerId: z.uuid().optional(),
 });
 
 export const planClassesSchema = z.object({
   level: z.enum(CatechesisLevel),
   capacity: z.coerce.number().int().min(5).max(100),
+  centerId: z.uuid().optional(),
 });
 export type PlanClassesQuery = z.infer<typeof planClassesSchema>;
 
@@ -170,6 +176,7 @@ export const generateClassesSchema = z.object({
   level: z.enum(CatechesisLevel),
   capacity: z.number().int().min(5).max(100),
   slot: z.enum(SessionSlot),
+  centerId: z.uuid().optional(),
 });
 export type GenerateClassesBody = z.infer<typeof generateClassesSchema>;
 
@@ -178,11 +185,13 @@ export const catechistListSchema = z.object({
     .enum(["todos", "ativos", "disponiveis", "em-formacao", "indisponiveis", "inativos"])
     .default("todos"),
   search: z.string().max(100).default(""),
+  centerId: z.uuid().optional(),
 });
 export type CatechistListQuery = z.infer<typeof catechistListSchema>;
 
 export const catechistStatusSchema = z.object({
   status: z.enum(["IN_TRAINING", "UNAVAILABLE", "INACTIVE"]).nullable(),
+  centerId: z.uuid().optional(),
 });
 
 export const presenceSchema = z.object({ status: z.enum(AttendanceStatus) });
@@ -203,6 +212,7 @@ export const catechumenListSchema = z.object({
     .optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  centerId: z.uuid().optional(),
 });
 export type CatechumenListQuery = z.infer<typeof catechumenListSchema>;
 
@@ -237,6 +247,7 @@ const celebrationFields = {
 
 export const createCelebrationSchema = z.object({
   type: z.enum(SacramentType),
+  centerId: z.uuid().optional(),
   ...celebrationFields,
 });
 export type CreateCelebrationBody = z.infer<typeof createCelebrationSchema>;
@@ -270,6 +281,7 @@ export const sacramentRecordsSchema = z.object({
   search: z.string().trim().max(100).optional(),
   origin: z.enum(["ALL", "THIS_PARISH", "OTHER"]).default("ALL"),
   celebrationId: z.uuid().optional(),
+  centerId: z.uuid().optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(1000).default(50),
 });
@@ -280,6 +292,9 @@ export type SacramentRecordsSummaryQuery = z.infer<typeof sacramentRecordsSummar
 
 /* Relatórios */
 
+export const centerFilterSchema = z.object({ centerId: z.uuid().optional() });
+export type CenterFilterQuery = z.infer<typeof centerFilterSchema>;
+
 export const reportExportParam = z.enum(REPORT_EXPORTS);
 
 /* Avisos */
@@ -287,6 +302,7 @@ export const reportExportParam = z.enum(REPORT_EXPORTS);
 export const announcementListSchema = z.object({
   audience: z.enum(["todos", "ALL", "GUARDIANS", "CATECHUMENS", "CATECHISTS"]).default("todos"),
   search: z.string().max(100).default(""),
+  centerId: z.uuid().optional(),
 });
 export type AnnouncementListQuery = z.infer<typeof announcementListSchema>;
 
@@ -299,6 +315,7 @@ export const publishAnnouncementSchema = z.object({
   notify: z.boolean(),
   /** Envia também o aviso completo por email (por omissão, não). */
   email: z.boolean().default(false),
+  centerId: z.uuid().optional(),
 });
 export type PublishAnnouncementBody = z.infer<typeof publishAnnouncementSchema>;
 

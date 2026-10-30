@@ -7,6 +7,7 @@ import {
 } from "../../../domain/catechetical-calendar.js";
 import { CalendarNotDefinedError } from "../../../domain/errors/catechesis.errors.js";
 import type { CalendarRepository } from "../../../domain/repositories/catechesis.repositories.js";
+import { assertParish, type CenterScope } from "../../center-scope.js";
 import { toCalendarView, type CalendarView } from "../../views.js";
 
 export class GetCalendarUseCase {
@@ -34,7 +35,12 @@ export class SetCalendarUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute({ actorId, ...dates }: SetCalendarInput): Promise<CalendarView> {
+  async execute({
+    actorId,
+    scope,
+    ...dates
+  }: SetCalendarInput & { scope?: CenterScope }): Promise<CalendarView> {
+    assertParish(scope);
     const now = this.clock.now();
     const current = await this.calendars.get();
     const calendar = current ?? CatecheticalCalendar.define({ ...dates, updatedBy: actorId }, now);
@@ -67,11 +73,14 @@ export class SetDeadlineUseCase {
     actorId,
     purpose,
     window,
+    scope,
   }: {
     actorId: string;
     purpose: DeadlinePurpose;
     window: DateWindow | null;
+    scope?: CenterScope;
   }): Promise<CalendarView> {
+    assertParish(scope);
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     calendar.setWindow(purpose, window, actorId, this.clock.now());

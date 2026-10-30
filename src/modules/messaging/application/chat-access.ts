@@ -1,5 +1,5 @@
 import type { ContactDirectory } from "../../../shared/application/contact-directory.js";
-import { isStaff, type ChatPerson } from "../domain/chat-policy.js";
+import { isStaff, staffCenterFilter, type ChatPerson } from "../domain/chat-policy.js";
 import type { Conversation } from "../domain/conversation.js";
 import { ConversationNotAllowedError, ConversationNotFoundError } from "../domain/errors.js";
 import type { ConversationRepository } from "../domain/repositories/messaging.repositories.js";
@@ -22,7 +22,7 @@ export class ChatAccess {
   /** A conversa, se quem pede a pode ver (senão, como se não existisse). */
   async conversation(viewer: ChatPerson, conversationId: string): Promise<Conversation> {
     const conversation = await this.conversations.findById(conversationId);
-    if (!conversation?.canBeSeenBy(viewer.id, isStaff(viewer))) {
+    if (!conversation?.canBeSeenBy(viewer.id, isStaff(viewer), staffCenterFilter(viewer))) {
       throw new ConversationNotFoundError();
     }
     return conversation;

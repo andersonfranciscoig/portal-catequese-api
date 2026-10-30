@@ -1,6 +1,7 @@
 import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
 import { ClassCatechistRole, type CatechesisLevel, type SessionSlot } from "./catechesis.js";
+import { SEDE_CENTER_ID } from "./center.js";
 import { InvalidClassError } from "./errors/catechesis.errors.js";
 
 export interface ClassCatechist {
@@ -18,12 +19,17 @@ export interface CatechesisClassProps {
   startTime?: string;
   room: string;
   capacity: number;
+  centerId: string;
   catechists: ClassCatechist[];
   createdAt: Date;
 }
 
-export type CreateClassProps = Omit<CatechesisClassProps, "catechists" | "createdAt"> & {
+export type CreateClassProps = Omit<
+  CatechesisClassProps,
+  "catechists" | "createdAt" | "centerId"
+> & {
   now: Date;
+  centerId?: string;
 };
 
 const SECTION = /^[A-Z]$/;
@@ -43,7 +49,14 @@ export class CatechesisClass extends AggregateRoot<CatechesisClassProps> {
     if (!Number.isInteger(props.capacity) || props.capacity < 1 || props.capacity > 100) {
       throw new InvalidClassError("A lotação tem de ser entre 1 e 100.");
     }
-    return new CatechesisClass({ ...props, section, room, catechists: [], createdAt: now });
+    return new CatechesisClass({
+      ...props,
+      section,
+      room,
+      centerId: props.centerId ?? SEDE_CENTER_ID,
+      catechists: [],
+      createdAt: now,
+    });
   }
 
   static restore(props: CatechesisClassProps, id: UniqueId): CatechesisClass {
@@ -70,6 +83,9 @@ export class CatechesisClass extends AggregateRoot<CatechesisClassProps> {
   }
   get capacity() {
     return this.props.capacity;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
   get catechists(): readonly ClassCatechist[] {
     return this.props.catechists;

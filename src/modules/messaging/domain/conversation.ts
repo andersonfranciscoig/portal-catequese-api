@@ -1,5 +1,6 @@
 import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
+import { SEDE_CENTER_ID } from "../../../shared/domain/parish-centers.js";
 import type { Message } from "./message.js";
 
 /**
@@ -21,6 +22,8 @@ export interface ConversationProps {
   directKey?: string;
   /** COORDINATION: a conta que fala com a equipa. */
   subjectAccountId?: string;
+  /** COORDINATION: o centro. Nulo nas conversas diretas. */
+  centerId?: string;
   createdAt: Date;
   updatedAt: Date;
   lastMessage?: LastMessage;
@@ -40,10 +43,11 @@ export class Conversation extends AggregateRoot<ConversationProps> {
     });
   }
 
-  static coordination(subjectAccountId: string, now: Date): Conversation {
+  static coordination(subjectAccountId: string, now: Date, centerId = SEDE_CENTER_ID): Conversation {
     return new Conversation({
       kind: "COORDINATION",
       subjectAccountId,
+      centerId,
       createdAt: now,
       updatedAt: now,
     });
@@ -61,6 +65,9 @@ export class Conversation extends AggregateRoot<ConversationProps> {
   }
   get subjectAccountId() {
     return this.props.subjectAccountId;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
   get createdAt() {
     return this.props.createdAt;
@@ -80,9 +87,11 @@ export class Conversation extends AggregateRoot<ConversationProps> {
   }
 
   /** Na conversa com a coordenação, toda a equipa (coordenação e administração) participa. */
-  canBeSeenBy(accountId: string, isStaff: boolean): boolean {
+  canBeSeenBy(accountId: string, isStaff: boolean, staffCenterId?: string): boolean {
     if (this.props.kind === "COORDINATION") {
-      return this.props.subjectAccountId === accountId || isStaff;
+      if (this.props.subjectAccountId === accountId) return true;
+      if (!isStaff) return false;
+      return !staffCenterId || (this.props.centerId ?? SEDE_CENTER_ID) === staffCenterId;
     }
     return this.memberIds.includes(accountId);
   }

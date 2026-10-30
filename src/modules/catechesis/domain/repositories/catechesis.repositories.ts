@@ -1,4 +1,5 @@
 import type { UniqueId } from "../../../../shared/domain/unique-id.js";
+import type { Center, CenterStatus } from "../center.js";
 import type { Announcement } from "../announcement.js";
 import type { CalendarActivity } from "../calendar-activity.js";
 import type { CatecheticalCalendar } from "../catechetical-calendar.js";
@@ -18,6 +19,12 @@ import type { RequirementCheck, SacramentCelebration, SacramentType } from "../s
  * Persistência do módulo da catequese. O domínio e a aplicação só conhecem
  * estes contratos; o Prisma/PostgreSQL é um detalhe da infraestrutura.
  */
+
+export abstract class CenterRepository {
+  abstract findById(id: string): Promise<Center | null>;
+  abstract list(status?: CenterStatus): Promise<Center[]>;
+  abstract save(center: Center): Promise<void>;
+}
 
 export abstract class CalendarRepository {
   abstract get(): Promise<CatecheticalCalendar | null>;
@@ -60,14 +67,19 @@ export abstract class ClassRepository {
   abstract listByYear(catecheticalYear: string): Promise<CatechesisClass[]>;
   /** Todas as turmas do catequista (todos os anos). */
   abstract listForCatechist(accountId: string): Promise<CatechesisClass[]>;
-  /** Anos com turmas (mais recentes primeiro). */
-  abstract listYears(): Promise<string[]>;
+  /** Anos com turmas (mais recentes primeiro). Com centro, só as desse centro. */
+  abstract listYears(centerId?: string): Promise<string[]>;
   /** Turma do catequista no ano (como principal ou auxiliar). */
   abstract findForCatechist(
     accountId: string,
     catecheticalYear: string,
   ): Promise<CatechesisClass | null>;
-  abstract exists(catecheticalYear: string, level: string, section: string): Promise<boolean>;
+  abstract exists(
+    catecheticalYear: string,
+    level: string,
+    section: string,
+    centerId?: string,
+  ): Promise<boolean>;
   abstract save(klass: CatechesisClass): Promise<void>;
 }
 

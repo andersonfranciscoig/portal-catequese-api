@@ -1,3 +1,5 @@
+import { StaffCenterRequiredError } from "./errors.js";
+
 /** Papel mostrado nas mensagens. */
 export type ChatRole = "GUARDIAN" | "CATECHIST" | "CATECHUMEN" | "COORDINATION" | "ADMIN";
 
@@ -11,6 +13,8 @@ export interface ChatPerson {
   roles: readonly ("GUARDIAN" | "CATECHUMEN" | "CATECHIST")[];
   staff: "ADMIN" | "COORDINATION" | null;
   active: boolean;
+  coordinationCenterId?: string | null;
+  generalCoordination?: boolean;
 }
 
 /** Relação da catequese entre quem pergunta e outra conta (ano em curso). */
@@ -43,6 +47,23 @@ export function luandaToday(now: Date): string {
 
 export function isStaff(person: Pick<ChatPerson, "staff">): boolean {
   return person.staff !== null;
+}
+
+/**
+ * Centro que a equipa pode ver nas conversas de coordenação.
+ * Sem os campos novos (testes) vê a paróquia. Administração e coordenação geral também.
+ * Coordenação sem centro recusa.
+ */
+export function staffCenterFilter(
+  person: Pick<ChatPerson, "staff" | "coordinationCenterId" | "generalCoordination">,
+): string | undefined {
+  if (!isStaff(person)) return undefined;
+  if (person.coordinationCenterId === undefined && person.generalCoordination === undefined) {
+    return undefined;
+  }
+  if (person.staff === "ADMIN" || person.generalCoordination) return undefined;
+  if (person.coordinationCenterId) return person.coordinationCenterId;
+  throw new StaffCenterRequiredError();
 }
 
 /** Papel principal de uma conta (equipa primeiro; depois catequista, encarregado, catequizando). */

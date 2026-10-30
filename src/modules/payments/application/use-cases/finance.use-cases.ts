@@ -6,7 +6,9 @@ import { BankAccount, type BankAccountData } from "../../domain/bank-account.js"
 import {
   BankAccountNotFoundError,
   InvalidPriceError,
+  PaymentCenterForbiddenError,
   PaymentNotFoundError,
+  PaymentParishOnlyError,
 } from "../../domain/errors.js";
 import type {
   Payment,
@@ -30,11 +32,19 @@ import {
 
 /* ───────────── Consulta ───────────── */
 
+export type FinanceScope = { kind: "parish" } | { kind: "center"; centerId: string };
+
 export interface PaymentQuery {
   status?: PaymentStatus;
   method?: PaymentMethod;
   purpose?: PaymentPurpose;
   search?: string;
+  /** Centro visível. Sem ele, a lista é a paróquia inteira. */
+  centerId?: string;
+}
+
+function assertParish(scope?: FinanceScope) {
+  if (scope?.kind === "center") throw new PaymentParishOnlyError();
 }
 
 export interface PaymentSummary {
@@ -68,7 +78,9 @@ export class ListPaymentsUseCase {
   constructor(private readonly payments: PaymentRepository) {}
 
   async execute(query: PaymentQuery): Promise<{ items: PaymentView[]; summary: PaymentSummary }> {
-    const all = await this.payments.listAll();
+    const all = (await this.payments.listAll()).filter(
+      (item) => !query.centerId || item.centerId === query.centerId,
+    );
     const search = normalize(query.search?.trim() ?? "");
     const items = all
       .filter(
@@ -106,13 +118,18 @@ export class ReviewPaymentUseCase {
     actorId,
     paymentId,
     review,
+    scope,
   }: {
     actorId: string;
     paymentId: string;
     review: PaymentReview;
+    scope?: FinanceScope;
   }): Promise<PaymentView> {
     const payment = await this.payments.findById(UniqueId.from(paymentId));
     if (!payment) throw new PaymentNotFoundError();
+    if (scope?.kind === "center" && payment.centerId !== scope.centerId) {
+      throw new PaymentCenterForbiddenError();
+    }
     const now = this.clock.now();
     const amount = kwanzas(payment.amount);
     const first = payment.catechumenName.split(" ")[0];
@@ -184,11 +201,14 @@ export class SetPriceUseCase {
     actorId,
     purpose,
     amount,
+    scope,
   }: {
     actorId: string;
     purpose: PaymentPurpose;
     amount: number;
+    scope?: FinanceScope;
   }): Promise<Prices> {
+    assertParish(scope);
     if (!Number.isInteger(amount) || amount < 0 || amount > 1_000_000) {
       throw new InvalidPriceError("O preço é um valor inteiro em kwanzas (até 1 000 000).");
     }
@@ -215,11 +235,14 @@ export class SaveBankAccountUseCase {
     actorId,
     id,
     data,
+    scope,
   }: {
     actorId: string;
     id?: string;
     data: BankAccountData;
+    scope?: FinanceScope;
   }): Promise<BankAccountView> {
+    assertParish(scope);
     const now = this.clock.now();
     let account: BankAccount;
     if (id) {
@@ -247,7 +270,16 @@ export class DeleteBankAccountUseCase {
     private readonly activity: ActivityRecorder,
   ) {}
 
-  async execute({ actorId, id }: { actorId: string; id: string }): Promise<void> {
+  async execute({
+    actorId,
+    id,
+    scope,
+  }: {
+    actorId: string;
+    id: string;
+    scope?: FinanceScope;
+  }): Promise<void> {
+    assertParish(scope);
     const account = await this.accounts.findById(UniqueId.from(id));
     if (!account) throw new BankAccountNotFoundError();
     await this.accounts.delete(account.id);

@@ -4,7 +4,11 @@ import type { Message } from "../message.js";
 export abstract class ConversationRepository {
   abstract findById(id: string): Promise<Conversation | null>;
   abstract findDirect(directKey: string): Promise<Conversation | null>;
-  abstract findCoordination(subjectAccountId: string): Promise<Conversation | null>;
+  /** Uma conversa de coordenação por conta e centro (por omissão, o Centro Sede). */
+  abstract findCoordination(
+    subjectAccountId: string,
+    centerId?: string,
+  ): Promise<Conversation | null>;
   /**
    * Grava uma conversa nova. Se, entretanto, outra igual já existir (mesmo par
    * ou mesma conta com a coordenação), devolve essa.
@@ -20,6 +24,8 @@ export abstract class ConversationRepository {
     accountId: string,
     isStaff: boolean,
     limit: number,
+    /** Coordenação de um centro: só as conversas desse centro. */
+    staffCenterId?: string,
   ): Promise<Conversation[]>;
   /** Marca como lido até `at` (nunca recua). */
   abstract markRead(conversationId: string, accountId: string, at: Date): Promise<void>;

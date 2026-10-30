@@ -7,6 +7,7 @@ import {
   type CatechesisLevel,
   type SessionSlot,
 } from "../../../domain/catechesis.js";
+import { SEDE_CENTER_ID } from "../../../domain/center.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
 import { catechistStatus } from "../../../domain/catechist-records.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
@@ -17,9 +18,11 @@ import {
 import type {
   CalendarRepository,
   CatechistProfileRepository,
+  CenterRepository,
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { matchesCenter, resolveWriteCenter, type CenterScope } from "../../center-scope.js";
 import type { EnrollmentActionUseCase } from "./enrollment.use-cases.js";
 
 export interface GenerationPlanView {
@@ -76,7 +79,7 @@ export class ClassGeneration {
     private readonly people: PeopleDirectory,
   ) {}
 
-  async context(level: CatechesisLevel) {
+  async context(level: CatechesisLevel, centerId = SEDE_CENTER_ID) {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     const year = calendar.label;
@@ -86,47 +89,63 @@ export class ClassGeneration {
       this.people.listCatechists(),
       this.profiles.list(),
     ]);
-    const ofLevel = all.filter((item) => item.level === level);
+    const inCenter = <T extends { centerId?: string }>(items: T[]) =>
+      items.filter((item) => matchesCenter(item.centerId, centerId));
+    const ofLevel = inCenter(all).filter((item) => item.level === level);
     const waiting = ofLevel
       .filter(awaitsPlacement)
       .sort((a, b) => a.submittedAt.getTime() - b.submittedAt.getTime());
     const confirmed = ofLevel.filter((item) => item.isConfirmed);
-    const busy = new Set(
-      classes.flatMap((klass) => klass.catechists.map((item) => item.accountId)),
-    );
+    const here = inCenter(classes);
+    const busy = new Set(here.flatMap((klass) => klass.catechists.map((item) => item.accountId)));
     const statusOf = new Map(profiles.map((profile) => [profile.accountId, profile]));
-    // Disponíveis: aprovados, ativos, sem turma no ano e sem estado que os afaste.
-    const available = catechists.filter(
-      (person) =>
+    // Disponíveis: aprovados, ativos, deste centro, sem turma no ano e sem estado que os afaste.
+    const available = catechists.filter((person) => {
+      const profile = statusOf.get(person.id);
+      return (
         person.approvedCatechist &&
         person.active &&
         !busy.has(person.id) &&
-        catechistStatus(statusOf.get(person.id), false) === "AVAILABLE",
-    );
+        matchesCenter(profile?.centerId, centerId) &&
+        catechistStatus(profile, false) === "AVAILABLE"
+      );
+    });
     return {
       year,
       waiting,
       confirmed,
-      levelClasses: classes.filter((klass) => klass.level === level),
+      levelClasses: here.filter((klass) => klass.level === level),
       available,
+      centerId,
     };
   }
 }
 
 export class PlanClassesUseCase {
-  constructor(private readonly generation: ClassGeneration) {}
+  constructor(
+    private readonly generation: ClassGeneration,
+    private readonly centers?: CenterRepository,
+  ) {}
 
   async execute({
     level,
     capacity,
+    centerId,
+    scope,
   }: {
     level: CatechesisLevel;
     capacity: number;
+    centerId?: string;
+    scope?: CenterScope;
   }): Promise<GenerationPlanView> {
     if (!Number.isInteger(capacity) || capacity < 5 || capacity > 100) {
       throw new InvalidClassError("A lotação tem de ser entre 5 e 100.");
     }
-    const { waiting, confirmed, levelClasses, available } = await this.generation.context(level);
+    const resolved = await resolveWriteCenter(this.centers, scope, centerId);
+    const { waiting, confirmed, levelClasses, available } = await this.generation.context(
+      level,
+      resolved,
+    );
     const total = waiting.length + confirmed.length;
     const count = Math.max(levelClasses.length, Math.ceil(total / capacity), 1);
     return {
@@ -163,6 +182,7 @@ export class GenerateClassesUseCase {
     private readonly confirm: EnrollmentActionUseCase,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
   async execute({
@@ -170,17 +190,24 @@ export class GenerateClassesUseCase {
     level,
     capacity,
     slot,
+    centerId,
+    scope,
   }: {
     actorId: string;
     level: CatechesisLevel;
     capacity: number;
     slot: SessionSlot;
+    centerId?: string;
+    scope?: CenterScope;
   }): Promise<GenerationResult> {
     if (!Number.isInteger(capacity) || capacity < 5 || capacity > 100) {
       throw new InvalidClassError("A lotação tem de ser entre 5 e 100.");
     }
-    const { year, waiting, confirmed, levelClasses, available } =
-      await this.generation.context(level);
+    const resolved = await resolveWriteCenter(this.centers, scope, centerId);
+    const { year, waiting, confirmed, levelClasses, available } = await this.generation.context(
+      level,
+      resolved,
+    );
     const total = waiting.length + confirmed.length;
     const needed = Math.max(Math.ceil(total / capacity), 1) - levelClasses.length;
     const now = this.clock.now();
@@ -197,6 +224,7 @@ export class GenerateClassesUseCase {
         slot,
         startTime: START_TIME[slot],
         room: "Sala a definir",
+        centerId: resolved,
         capacity,
         now,
       });

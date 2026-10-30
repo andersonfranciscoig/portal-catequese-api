@@ -16,8 +16,10 @@ model Conversation {
   kind                ConversationKind
   /// Conversa direta: os dois ids ordenados ("a:b"), única por par.
   directKey           String?          @unique @map("direct_key")
-  /// Conversa com a coordenação: a conta (uma conversa por conta).
-  subjectAccountId    String?          @unique @map("subject_account_id") @db.Uuid
+  /// Conversa com a coordenação: a conta. Uma por centro (sem chave estrangeira).
+  subjectAccountId    String?          @map("subject_account_id") @db.Uuid
+  /// Centro da conversa de coordenação. Nulo nas conversas diretas.
+  centerId            String?          @map("center_id") @db.Uuid
   createdAt           DateTime         @map("created_at") @db.Timestamptz(3)
   /// Última atividade (criação ou última mensagem).
   updatedAt           DateTime         @map("updated_at") @db.Timestamptz(3)
@@ -28,6 +30,8 @@ model Conversation {
   members  ConversationMember[]
   messages Message[]
 
+  /// Uma conversa de coordenação por conta e centro. Diretas ficam com os dois nulos.
+  @@unique([subjectAccountId, centerId])
   @@index([kind, updatedAt(sort: Desc)])
   @@map("conversations")
   @@schema("messaging")

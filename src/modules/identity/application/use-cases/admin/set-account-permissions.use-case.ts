@@ -4,9 +4,12 @@ import type { UseCase } from "../../../../../shared/application/use-case.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { Permission } from "../../../domain/account-role.js";
 import {
+  CoordinationCenterNotFoundError,
+  CoordinationCenterRequiredError,
   LastAdministratorError,
   SelfAdministrationError,
 } from "../../../domain/errors/identity.errors.js";
+import type { CoordinationCenterLookup } from "../../ports/coordination-center-lookup.js";
 import type { AccountRepository } from "../../../domain/repositories/account.repository.js";
 import { toAdminAccountView, type AdminAccountView } from "../../account-view.js";
 import { loadAdministrator, loadTarget, PERMISSION_LABEL } from "./administrator.js";
@@ -15,6 +18,8 @@ export interface SetAccountPermissionsInput {
   actorId: string;
   accountId: string;
   permissions: Permission[];
+  /** Omitido: mantém o centro atual. `null`: limpa. */
+  coordinationCenterId?: string | null;
 }
 
 /** O que dizer à pessoa: o acesso mais importante que ganhou, ou o resumo. */
@@ -57,9 +62,15 @@ export class SetAccountPermissionsUseCase implements UseCase<
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
     private readonly notifier: Notifier,
+    private readonly centers?: CoordinationCenterLookup,
   ) {}
 
-  async execute({ actorId, accountId, permissions }: SetAccountPermissionsInput) {
+  async execute({
+    actorId,
+    accountId,
+    permissions,
+    coordinationCenterId,
+  }: SetAccountPermissionsInput) {
     const actor = await loadAdministrator(this.accounts, actorId);
     const account = await loadTarget(this.accounts, accountId);
     const before = [...account.permissions];
@@ -75,7 +86,23 @@ export class SetAccountPermissionsUseCase implements UseCase<
       }
     }
 
-    account.setPermissions(permissions, this.clock.now());
+    const now = this.clock.now();
+    account.setPermissions(permissions, now);
+    const stored = account.permissions;
+    const needsCenter =
+      stored.includes(Permission.COORDINATION) &&
+      !stored.includes(Permission.GENERAL_COORDINATION) &&
+      !stored.includes(Permission.SUPER_ADMIN);
+    const resolved = coordinationCenterId === undefined ? account.coordinationCenterId : coordinationCenterId;
+    if (!needsCenter) {
+      account.setCoordinationCenter(null, now);
+    } else if (!resolved) {
+      throw new CoordinationCenterRequiredError();
+    } else if (!this.centers || !(await this.centers.exists(resolved))) {
+      throw new CoordinationCenterNotFoundError();
+    } else {
+      account.setCoordinationCenter(resolved, now);
+    }
     await this.accounts.save(account);
 
     const after = account.permissions;

@@ -20,6 +20,9 @@ function toContact(account: Account): ContactPerson {
         ? "COORDINATION"
         : null,
     active: !account.isBlocked,
+    coordinationCenterId: account.coordinationCenterId,
+    generalCoordination:
+      account.isSuperAdmin || account.hasPermission(Permission.GENERAL_COORDINATION),
   };
 }
 

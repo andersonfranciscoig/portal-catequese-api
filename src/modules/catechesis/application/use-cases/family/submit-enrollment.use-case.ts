@@ -25,8 +25,10 @@ import {
 import type {
   CalendarRepository,
   CatechumenRepository,
+  CenterRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { resolveWriteCenter, type CenterScope } from "../../center-scope.js";
 import { cleanParish, mergeDeclared } from "../../../domain/sacrament-records.js";
 import type { CatechesisAccess } from "../../catechesis-access.js";
 import type { SacramentChange, SacramentRecords } from "../../sacrament-records.js";
@@ -63,6 +65,8 @@ export interface SubmitEnrollmentInput {
   documentsInPerson?: boolean;
   /** Fora do prazo (coordenação com permissão "fora do prazo"). */
   allowLate?: boolean;
+  centerId?: string;
+  scope?: CenterScope;
 }
 
 const sameName = (a: string, b: string) =>
@@ -86,6 +90,7 @@ export class SubmitEnrollmentUseCase {
     private readonly notifier: Notifier,
     private readonly events: EventBus,
     private readonly records: SacramentRecords,
+    private readonly centers?: CenterRepository,
   ) {}
 
   async execute({
@@ -95,7 +100,10 @@ export class SubmitEnrollmentUseCase {
     catechesis,
     documentsInPerson,
     allowLate,
+    centerId,
+    scope,
   }: SubmitEnrollmentInput): Promise<EnrollmentView> {
+    const resolvedCenter = await resolveWriteCenter(this.centers, scope, centerId);
     const person = await this.access.applicant(accountId);
     const forChild = Boolean(guardian);
     if (!person.roles.includes(forChild ? "GUARDIAN" : "CATECHUMEN"))
@@ -136,6 +144,7 @@ export class SubmitEnrollmentUseCase {
     let catechumen: Catechumen;
     if (existing) {
       existing.update(sacraments, now);
+      existing.placeAt(resolvedCenter, now);
       catechumen = existing;
     } else {
       catechumen = Catechumen.register({
@@ -146,6 +155,7 @@ export class SubmitEnrollmentUseCase {
         guardianAccountId: forChild ? accountId : undefined,
         guardianRelationship: guardian?.relationship,
         accountId: forChild ? undefined : accountId,
+        centerId: resolvedCenter,
         now,
       });
     }
@@ -160,6 +170,7 @@ export class SubmitEnrollmentUseCase {
       catecheticalYear: calendar.label,
       submittedBy: accountId,
       documentsInPerson,
+      centerId: resolvedCenter,
       now,
     });
     // Os sacramentos indicados passam a registos (sem apagar o que já se sabia);

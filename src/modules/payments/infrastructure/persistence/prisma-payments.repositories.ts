@@ -25,6 +25,7 @@ function toPayment(row: PaymentRow) {
   return Payment.restore(
     {
       enrollmentId: row.enrollmentId,
+      centerId: row.centerId,
       enrollmentCode: row.enrollmentCode,
       catechumenName: row.catechumenName,
       purpose: row.purpose,
@@ -121,8 +122,9 @@ export class PrismaPaymentRepository extends PaymentRepository {
       where: { id: payment.id.value },
       create: {
         id: payment.id.value,
-        enrollmentId: payment.enrollmentId,
-        enrollmentCode: payment.enrollmentCode,
+      enrollmentId: payment.enrollmentId,
+      centerId: payment.centerId,
+      enrollmentCode: payment.enrollmentCode,
         catechumenName: payment.catechumenName,
         purpose: payment.purpose,
         createdAt: payment.createdAt,

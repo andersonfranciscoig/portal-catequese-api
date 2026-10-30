@@ -5,6 +5,7 @@
  */
 export { IdentityModule } from "./identity.module.js";
 export { AccountRole, AccountApproval, Permission } from "./domain/account-role.js";
+export { centerScopeFromAccess, type CenterScope } from "./domain/center-scope.js";
 export type { AccessTokenClaims } from "./application/ports/access-token-issuer.js";
 export { AccountDirectoryService } from "./application/account-directory.service.js";
 export { AuthGuard } from "./presentation/http/guards/auth.guard.js";

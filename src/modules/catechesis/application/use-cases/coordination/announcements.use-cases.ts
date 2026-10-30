@@ -16,7 +16,19 @@ import {
   AnnouncementNotFoundError,
   AnnouncementRoleError,
 } from "../../../domain/errors/catechesis.errors.js";
-import type { AnnouncementRepository } from "../../../domain/repositories/catechesis.repositories.js";
+import { centerRef, SEDE_CENTER_ID } from "../../../domain/center.js";
+import type {
+  AnnouncementRepository,
+  CatechistProfileRepository,
+  CatechumenRepository,
+  CenterRepository,
+} from "../../../domain/repositories/catechesis.repositories.js";
+import {
+  assertSameCenter,
+  matchesCenter,
+  resolveWriteCenter,
+  type CenterScope,
+} from "../../center-scope.js";
 
 const AUDIENCES = Object.values(AnnouncementAudience);
 
@@ -73,6 +85,7 @@ export interface AnnouncementView {
   updatedAt: string;
   recipients: number;
   reads: number;
+  center: { id: string; name: string };
 }
 
 function toPortal(item: Announcement) {
@@ -86,6 +99,7 @@ function toPortal(item: Announcement) {
     author: item.author,
     createdAt: item.publishedAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+    center: centerRef(item.centerId),
   };
 }
 
@@ -98,8 +112,10 @@ export class ListAnnouncementsUseCase {
     private readonly people: PeopleDirectory,
   ) {}
 
-  async execute(query: { audience?: Audience | "todos"; search?: string }) {
-    const all = (await this.announcements.list()).sort(byPinned);
+  async execute(query: { audience?: Audience | "todos"; search?: string; centerId?: string }) {
+    const all = (await this.announcements.list())
+      .filter((item) => matchesCenter(item.centerId, query.centerId))
+      .sort(byPinned);
     const audience = query.audience ?? "todos";
     const term = normalize(query.search?.trim() ?? "");
     const items = all.filter(
@@ -140,6 +156,7 @@ export class PublishAnnouncementUseCase {
     private readonly notifier: Notifier,
     private readonly mailer: Mailer,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
   /**
@@ -154,8 +171,16 @@ export class PublishAnnouncementUseCase {
     pinned: boolean;
     notify: boolean;
     email: boolean;
+    centerId?: string;
+    scope?: CenterScope;
   }): Promise<AnnouncementView> {
-    const item = Announcement.create({ ...input, createdBy: input.actorId, now: this.clock.now() });
+    const centerId = await resolveWriteCenter(this.centers, input.scope, input.centerId);
+    const item = Announcement.create({
+      ...input,
+      centerId,
+      createdBy: input.actorId,
+      now: this.clock.now(),
+    });
     await this.announcements.save(item);
     const recipients = recipientsOf(await portalPeople(this.people), item.audience);
     const others = recipients.filter((person) => person.id !== input.actorId);
@@ -212,9 +237,11 @@ export class SetAnnouncementPinnedUseCase {
     actorId: string;
     id: string;
     pinned: boolean;
+    scope?: CenterScope;
   }): Promise<AnnouncementView> {
     const item = await this.announcements.findById(UniqueId.from(input.id));
     if (!item) throw new AnnouncementNotFoundError();
+    assertSameCenter(input.scope, item.centerId);
     item.setPinned(input.pinned, this.clock.now());
     await this.announcements.save(item);
     await this.activity.record({
@@ -238,9 +265,10 @@ export class DeleteAnnouncementUseCase {
     private readonly activity: ActivityRecorder,
   ) {}
 
-  async execute(input: { actorId: string; id: string }) {
+  async execute(input: { actorId: string; id: string; scope?: CenterScope }) {
     const item = await this.announcements.findById(UniqueId.from(input.id));
     if (!item) throw new AnnouncementNotFoundError();
+    assertSameCenter(input.scope, item.centerId);
     await this.announcements.delete(item.id);
     await this.activity.record({
       actorId: input.actorId,
@@ -256,13 +284,17 @@ export class ListMyAnnouncementsUseCase {
   constructor(
     private readonly announcements: AnnouncementRepository,
     private readonly clock: Clock,
+    private readonly catechumens?: CatechumenRepository,
+    private readonly profiles?: CatechistProfileRepository,
   ) {}
 
   async execute(input: { accountId: string; roles: readonly string[]; role: PortalRole }) {
     if (!input.roles.includes(input.role)) throw new AnnouncementRoleError();
     const audience = PORTAL_AUDIENCE[input.role];
+    const allowed = await this.linkedCenters(input.accountId);
     const items = (await this.announcements.list())
       .filter((item) => item.audience === "ALL" || item.audience === audience)
+      .filter((item) => !allowed || allowed.has(item.centerId ?? SEDE_CENTER_ID))
       .sort(byPinned);
     await this.announcements.markRead(
       items.map((item) => item.id.value),
@@ -270,5 +302,19 @@ export class ListMyAnnouncementsUseCase {
       this.clock.now(),
     );
     return items.map(toPortal);
+  }
+
+  /** Centros dos catequizandos e, se for catequista, do perfil. Sem ligações, o Centro Sede. */
+  private async linkedCenters(accountId: string): Promise<Set<string> | null> {
+    if (!this.catechumens || !this.profiles) return null;
+    const [catechumens, profile] = await Promise.all([
+      this.catechumens.findAccessibleBy(accountId),
+      this.profiles.find(accountId),
+    ]);
+    const ids = [
+      ...catechumens.map((item) => item.centerId),
+      ...(profile ? [profile.centerId] : []),
+    ];
+    return new Set(ids.length ? ids : [SEDE_CENTER_ID]);
   }
 }

@@ -1,5 +1,6 @@
 import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
+import { SEDE_CENTER_ID } from "./center.js";
 import { InvalidAnnouncementError } from "./errors/catechesis.errors.js";
 
 /** Quem recebe o aviso no portal. */
@@ -24,6 +25,7 @@ export interface AnnouncementProps {
   publishedAt: Date;
   updatedAt: Date;
   createdBy: string;
+  centerId: string;
 }
 
 export class Announcement extends AggregateRoot<AnnouncementProps> {
@@ -33,6 +35,7 @@ export class Announcement extends AggregateRoot<AnnouncementProps> {
     audience: AnnouncementAudience;
     pinned: boolean;
     createdBy: string;
+    centerId?: string;
     now: Date;
   }): Announcement {
     const title = input.title.trim();
@@ -52,6 +55,7 @@ export class Announcement extends AggregateRoot<AnnouncementProps> {
       publishedAt: input.now,
       updatedAt: input.now,
       createdBy: input.createdBy,
+      centerId: input.centerId ?? SEDE_CENTER_ID,
     });
   }
 
@@ -82,6 +86,9 @@ export class Announcement extends AggregateRoot<AnnouncementProps> {
   }
   get createdBy() {
     return this.props.createdBy;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
 
   setPinned(pinned: boolean, now: Date) {

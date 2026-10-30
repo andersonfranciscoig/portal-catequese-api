@@ -7,6 +7,7 @@ import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar
 import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import { addDays, luandaToday } from "../../../domain/dates.js";
 import { CalendarNotDefinedError } from "../../../domain/errors/catechesis.errors.js";
+import { matchesCenter } from "../../center-scope.js";
 import type {
   AttendanceRepository,
   CalendarRepository,
@@ -27,6 +28,7 @@ import { classShortLabel, firstName } from "../../messages.js";
 /** Encontro já com o prazo passado e sem chamada lançada. */
 export interface PendingRollView {
   classId: string;
+  centerId: string;
   /** "Comunhão · 3.º ano · A" */
   classLabel: string;
   /** YYYY-MM-DD */
@@ -87,6 +89,7 @@ export class PendingRolls {
     return missing
       .map(({ klass, date }) => ({
         classId: klass.id.value,
+        centerId: klass.centerId,
         classLabel: classShortLabel(klass),
         date,
         deadline: rollDeadline(date).toISOString(),
@@ -115,10 +118,12 @@ export class ListPendingRollsUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute(): Promise<{ items: PendingRollView[] }> {
+  async execute({ centerId }: { centerId?: string } = {}): Promise<{ items: PendingRollView[] }> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const classes = await this.classes.listByYear(calendar.label);
+    const classes = (await this.classes.listByYear(calendar.label)).filter((klass) =>
+      matchesCenter(klass.centerId, centerId),
+    );
     return { items: await this.pending.list(calendar, classes, this.clock.now()) };
   }
 }
@@ -242,7 +247,7 @@ export class SendRollRemindersUseCase {
           );
         }
         await safely(`mensagem a ${accountId}`, () =>
-          this.messenger.post({ toAccountId: accountId, body: text }),
+          this.messenger.post({ toAccountId: accountId, body: text, centerId: item.centerId }),
         );
       }
     }

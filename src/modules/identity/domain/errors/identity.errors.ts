@@ -156,6 +156,22 @@ export class AccountWithoutRolesError extends DomainError {
   }
 }
 
+export class CoordinationCenterRequiredError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "identity.coordination_center_required";
+  constructor() {
+    super("A coordenação deste centro ainda não foi definida. Peça à administração para indicar o centro.");
+  }
+}
+
+export class CoordinationCenterNotFoundError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "catechesis.center_not_found";
+  constructor() {
+    super("Centro não encontrado.");
+  }
+}
+
 export class NotCatechistApproverError extends DomainError {
   readonly kind = "forbidden";
   readonly code = "identity.not_catechist_approver";

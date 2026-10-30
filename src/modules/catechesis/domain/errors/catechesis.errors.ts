@@ -11,6 +11,28 @@ function error(kind: DomainErrorKind, code: string, fallback?: string) {
   };
 }
 
+export class InvalidCenterError extends error("validation", "invalid_center") {}
+export class CenterNotFoundError extends error(
+  "validation",
+  "center_not_found",
+  "Centro não encontrado.",
+) {}
+export class CenterInactiveError extends error(
+  "validation",
+  "center_inactive",
+  "Este centro está inativo. Pode consultar o histórico, mas não criar nada de novo.",
+) {}
+export class CenterForbiddenError extends error(
+  "forbidden",
+  "center_forbidden",
+  "Esta área é só do seu centro.",
+) {}
+export class ParishOnlyError extends error(
+  "forbidden",
+  "parish_only",
+  "Só a coordenação da paróquia pode alterar isto.",
+) {}
+
 export class InvalidCalendarError extends error("validation", "invalid_calendar") {}
 export class CalendarNotDefinedError extends error(
   "not_found",

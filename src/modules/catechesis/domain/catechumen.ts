@@ -2,6 +2,7 @@ import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
 import type { Gender, GuardianRelationship } from "./catechesis.js";
 import { isIsoDate } from "./dates.js";
+import { SEDE_CENTER_ID } from "./center.js";
 import { InvalidCatechumenError } from "./errors/catechesis.errors.js";
 
 export interface CatechumenProps {
@@ -17,12 +18,17 @@ export interface CatechumenProps {
   guardianRelationship?: GuardianRelationship;
   /** Conta própria (adulto inscrito por si). */
   accountId?: string;
+  centerId: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export type RegisterCatechumenProps = Omit<CatechumenProps, "createdAt" | "updatedAt"> & {
+export type RegisterCatechumenProps = Omit<
+  CatechumenProps,
+  "createdAt" | "updatedAt" | "centerId"
+> & {
   now: Date;
+  centerId?: string;
 };
 
 /** Quem faz a catequese. Pertence a um encarregado (menor) ou à própria conta (adulto). */
@@ -47,6 +53,7 @@ export class Catechumen extends AggregateRoot<CatechumenProps> {
       ...props,
       fullName,
       address: props.address?.trim() || undefined,
+      centerId: props.centerId ?? SEDE_CENTER_ID,
       createdAt: now,
       updatedAt: now,
     });
@@ -83,6 +90,9 @@ export class Catechumen extends AggregateRoot<CatechumenProps> {
   get accountId() {
     return this.props.accountId;
   }
+  get centerId() {
+    return this.props.centerId;
+  }
   get createdAt() {
     return this.props.createdAt;
   }
@@ -104,6 +114,12 @@ export class Catechumen extends AggregateRoot<CatechumenProps> {
     if (type === "BAPTISM") this.props.baptized = received;
     else if (type === "FIRST_COMMUNION") this.props.firstCommunion = received;
     else return;
+    this.props.updatedAt = now;
+  }
+
+  /** O centro da matrícula mais recente. */
+  placeAt(centerId: string, now: Date) {
+    this.props.centerId = centerId;
     this.props.updatedAt = now;
   }
 

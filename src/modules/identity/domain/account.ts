@@ -34,6 +34,8 @@ export interface AccountProps {
   blockedAt?: Date;
   /** Fase de lançamento: aceite como testadora pela administração. */
   betaAccess: boolean;
+  /** Centro da coordenação. Nulo na coordenação geral, no super admin e sem coordenação. */
+  coordinationCenterId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,6 +65,7 @@ export class Account extends AggregateRoot<AccountProps> {
       permissions: normalizePermissions(permissions ?? []),
       status: AccountStatus.ACTIVE,
       betaAccess: betaAccess ?? false,
+      coordinationCenterId: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -73,7 +76,12 @@ export class Account extends AggregateRoot<AccountProps> {
   /** Reconstrói uma conta já existente (ex.: a partir da base de dados). */
   static restore(props: AccountProps, id: UniqueId): Account {
     return new Account(
-      { ...props, roles: uniqueRoles(props.roles), permissions: [...props.permissions] },
+      {
+        ...props,
+        roles: uniqueRoles(props.roles),
+        permissions: [...props.permissions],
+        coordinationCenterId: props.coordinationCenterId ?? null,
+      },
       id,
     );
   }
@@ -111,6 +119,9 @@ export class Account extends AggregateRoot<AccountProps> {
   }
   get betaAccess() {
     return this.props.betaAccess;
+  }
+  get coordinationCenterId() {
+    return this.props.coordinationCenterId;
   }
   get createdAt() {
     return this.props.createdAt;
@@ -165,6 +176,11 @@ export class Account extends AggregateRoot<AccountProps> {
   /** Substitui as permissões (as da coordenação caem se a coordenação sair). */
   setPermissions(permissions: Permission[], now: Date): void {
     this.props.permissions = normalizePermissions(permissions);
+    this.props.updatedAt = now;
+  }
+
+  setCoordinationCenter(centerId: string | null, now: Date): void {
+    this.props.coordinationCenterId = centerId;
     this.props.updatedAt = now;
   }
 

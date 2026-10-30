@@ -46,7 +46,11 @@ export class PermissionsGuard implements CanActivate {
     if (!required.every((permission) => account.hasPermission(permission))) {
       throw new MissingPermissionError();
     }
-    request.account = { ...request.account, permissions: account.effectivePermissions() };
+    request.account = {
+      ...request.account,
+      permissions: account.effectivePermissions(),
+      coordinationCenterId: account.coordinationCenterId,
+    };
     return true;
   }
 }

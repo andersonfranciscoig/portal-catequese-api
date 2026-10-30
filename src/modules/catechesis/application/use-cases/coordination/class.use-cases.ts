@@ -14,9 +14,16 @@ import {
 } from "../../../domain/errors/catechesis.errors.js";
 import type {
   CalendarRepository,
+  CenterRepository,
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import {
+  assertSameCenter,
+  matchesCenter,
+  resolveWriteCenter,
+  type CenterScope,
+} from "../../center-scope.js";
 import { classLabel, classSchedule } from "../../messages.js";
 import { toClassViews, type ClassView } from "../../views.js";
 
@@ -44,10 +51,15 @@ export class ListClassesUseCase {
   ) {}
 
   /** Sem ano, o ano em curso. */
-  async execute({ year }: { year?: string } = {}): Promise<CoordinationClassView[]> {
+  async execute({
+    year,
+    centerId,
+  }: { year?: string; centerId?: string } = {}): Promise<CoordinationClassView[]> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const classes = await this.classes.listByYear(year ?? calendar.label);
+    const classes = (await this.classes.listByYear(year ?? calendar.label)).filter((item) =>
+      matchesCenter(item.centerId, centerId),
+    );
     const views = await toClassViews(classes, this.people, calendar, luandaToday(this.clock.now()));
     return withMembers(views, this.enrollments);
   }
@@ -61,6 +73,8 @@ export interface CreateClassInput {
   startTime?: string;
   room: string;
   capacity: number;
+  centerId?: string;
+  scope?: CenterScope;
 }
 
 export class CreateClassUseCase {
@@ -70,17 +84,20 @@ export class CreateClassUseCase {
     private readonly people: PeopleDirectory,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
-  async execute({ actorId, ...input }: CreateClassInput): Promise<CoordinationClassView> {
+  async execute({ actorId, scope, centerId, ...input }: CreateClassInput): Promise<CoordinationClassView> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
+    const resolved = await resolveWriteCenter(this.centers!, scope, centerId);
     const klass = CatechesisClass.create({
       ...input,
+      centerId: resolved,
       catecheticalYear: calendar.label,
       now: this.clock.now(),
     });
-    if (await this.classes.exists(calendar.label, klass.level, klass.section)) {
+    if (await this.classes.exists(calendar.label, klass.level, klass.section, klass.centerId)) {
       throw new ClassAlreadyExistsError();
     }
     await this.classes.save(klass);
@@ -104,6 +121,7 @@ export interface AssignCatechistsInput {
   actorId: string;
   classId: string;
   catechists: ClassCatechist[];
+  scope?: CenterScope;
 }
 
 /** Define os catequistas da turma (todos aprovados e sem outra turma no mesmo ano). */
@@ -122,9 +140,11 @@ export class AssignCatechistsUseCase {
     actorId,
     classId,
     catechists,
+    scope,
   }: AssignCatechistsInput): Promise<CoordinationClassView> {
     const klass = await this.classes.findById(UniqueId.from(classId));
     if (!klass) throw new ClassNotFoundError();
+    assertSameCenter(scope, klass.centerId);
     const people = await this.people.findMany(catechists.map((item) => item.accountId));
     if (
       people.length !== new Set(catechists.map((item) => item.accountId)).size ||

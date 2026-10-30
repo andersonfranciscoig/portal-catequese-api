@@ -52,6 +52,7 @@ describe("Conta com vários papéis (encarregado e catequista)", () => {
       actorId: admin.id.value,
       accountId: account.id,
       permissions: ["COORDINATION"],
+      coordinationCenterId: "a1000000-0000-4000-8000-000000000001",
     });
     await ctx.addOwnRole.execute({ accountId: account.id, role: "CATECHIST" });
     const stored = await ctx.accounts.findById(UniqueId.from(account.id));

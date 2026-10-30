@@ -3,6 +3,7 @@ import type { PeopleDirectory } from "../../../../../shared/application/people-d
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { Catechumen } from "../../../domain/catechumen.js";
+import { matchesCenter, assertSameCenter, type CenterScope } from "../../center-scope.js";
 import { luandaToday } from "../../../domain/dates.js";
 import {
   AlreadyReceivedError,
@@ -59,9 +60,11 @@ export class SetReceivedSacramentUseCase {
     /** Sem o campo, fica o que já estava; `null` apaga. */
     date?: string | null;
     parish?: string | null;
+    scope?: CenterScope;
   }): Promise<ReceivedSacramentView> {
     const catechumen = await this.catechumens.findById(UniqueId.from(input.catechumenId));
     if (!catechumen) throw new CatechumenNotFoundError();
+    assertSameCenter(input.scope, catechumen.centerId);
     const current = (await this.records.current(catechumen.id.value))[input.type];
     let facts: SacramentFacts | null = null;
     if (input.received) {
@@ -247,6 +250,7 @@ export interface SacramentRecordsQuery {
   search?: string;
   origin?: RecordOrigin;
   celebrationId?: string;
+  centerId?: string;
   page: number;
   pageSize: number;
 }
@@ -299,8 +303,9 @@ export class ListSacramentRecordsUseCase {
       })
       .filter(
         ({ catechumen }) =>
-          !search ||
-          normalize(`${catechumen.fullName} ${guardianOf(catechumen) ?? ""}`).includes(search),
+          matchesCenter(catechumen.centerId, query.centerId) &&
+          (!search ||
+            normalize(`${catechumen.fullName} ${guardianOf(catechumen) ?? ""}`).includes(search)),
       )
       .sort(
         (a, b) =>

@@ -6,6 +6,7 @@ import type {
   Message as MessageRow,
 } from "../../../../shared/infrastructure/database/generated/client.js";
 import { PrismaService } from "../../../../shared/infrastructure/database/prisma.service.js";
+import { SEDE_CENTER_ID } from "../../../../shared/domain/parish-centers.js";
 import { Conversation } from "../../domain/conversation.js";
 import { Message } from "../../domain/message.js";
 import {
@@ -21,6 +22,7 @@ function toConversation(row: ConversationRow): Conversation {
       kind: row.kind,
       directKey: row.directKey ?? undefined,
       subjectAccountId: row.subjectAccountId ?? undefined,
+      centerId: row.centerId ?? undefined,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastMessage:
@@ -69,9 +71,11 @@ export class PrismaConversationRepository extends ConversationRepository {
     return row ? toConversation(row) : null;
   }
 
-  async findCoordination(subjectAccountId: string) {
+  async findCoordination(subjectAccountId: string, centerId = SEDE_CENTER_ID) {
     if (!UUID.test(subjectAccountId)) return null;
-    const row = await this.prisma.conversation.findUnique({ where: { subjectAccountId } });
+    const row = await this.prisma.conversation.findFirst({
+      where: { kind: "COORDINATION", subjectAccountId, centerId },
+    });
     return row ? toConversation(row) : null;
   }
 
@@ -83,6 +87,7 @@ export class PrismaConversationRepository extends ConversationRepository {
           kind: conversation.kind,
           directKey: conversation.directKey ?? null,
           subjectAccountId: conversation.subjectAccountId ?? null,
+          centerId: conversation.centerId ?? null,
           createdAt: conversation.createdAt,
           updatedAt: conversation.updatedAt,
           members: {
@@ -96,7 +101,7 @@ export class PrismaConversationRepository extends ConversationRepository {
       if (!isUniqueViolation(error)) throw error;
       const existing = conversation.directKey
         ? await this.findDirect(conversation.directKey)
-        : await this.findCoordination(conversation.subjectAccountId!);
+        : await this.findCoordination(conversation.subjectAccountId!, conversation.centerId);
       if (!existing) throw error;
       return existing;
     }
@@ -115,14 +120,18 @@ export class PrismaConversationRepository extends ConversationRepository {
     });
   }
 
-  async listVisibleTo(accountId: string, isStaff: boolean, limit: number) {
+  async listVisibleTo(accountId: string, isStaff: boolean, limit: number, staffCenterId?: string) {
     if (!UUID.test(accountId)) return [];
+    const staff =
+      isStaff
+        ? [{ kind: "COORDINATION" as const, ...(staffCenterId ? { centerId: staffCenterId } : {}) }]
+        : [];
     const rows = await this.prisma.conversation.findMany({
       where: {
         OR: [
           { kind: "DIRECT", members: { some: { accountId } } },
           { kind: "COORDINATION", subjectAccountId: accountId },
-          ...(isStaff ? [{ kind: "COORDINATION" as const }] : []),
+          ...staff,
         ],
       },
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],

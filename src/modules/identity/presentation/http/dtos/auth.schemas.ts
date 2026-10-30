@@ -90,6 +90,7 @@ export type AccountQueryParams = z.infer<typeof accountQuerySchema>;
 
 export const permissionsSchema = z.object({
   permissions: z.array(z.enum(Permission)).max(10),
+  coordinationCenterId: z.uuid().nullable().optional(),
 });
 
 export type PermissionsBody = z.infer<typeof permissionsSchema>;

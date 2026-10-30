@@ -1,3 +1,4 @@
+import { SEDE_CENTER_ID } from "../../../../shared/domain/parish-centers.js";
 import type { Conversation } from "../../domain/conversation.js";
 import type { Message } from "../../domain/message.js";
 import {
@@ -46,17 +47,20 @@ export class InMemoryConversationRepository extends ConversationRepository {
   async findDirect(directKey: string) {
     return [...this.items.values()].find((item) => item.directKey === directKey) ?? null;
   }
-  async findCoordination(subjectAccountId: string) {
+  async findCoordination(subjectAccountId: string, centerId = SEDE_CENTER_ID) {
     return (
       [...this.items.values()].find(
-        (item) => item.kind === "COORDINATION" && item.subjectAccountId === subjectAccountId,
+        (item) =>
+          item.kind === "COORDINATION" &&
+          item.subjectAccountId === subjectAccountId &&
+          (item.centerId ?? SEDE_CENTER_ID) === centerId,
       ) ?? null
     );
   }
   async create(conversation: Conversation) {
     const existing = conversation.directKey
       ? await this.findDirect(conversation.directKey)
-      : await this.findCoordination(conversation.subjectAccountId!);
+      : await this.findCoordination(conversation.subjectAccountId!, conversation.centerId);
     if (existing) return existing;
     this.items.set(conversation.id.value, conversation);
     return conversation;
@@ -64,13 +68,14 @@ export class InMemoryConversationRepository extends ConversationRepository {
   async save(conversation: Conversation) {
     this.items.set(conversation.id.value, conversation);
   }
-  async listVisibleTo(accountId: string, isStaff: boolean, limit: number) {
+  async listVisibleTo(accountId: string, isStaff: boolean, limit: number, staffCenterId?: string) {
     return [...this.items.values()]
-      .filter((item) =>
-        item.kind === "COORDINATION"
-          ? isStaff || item.subjectAccountId === accountId
-          : item.memberIds.includes(accountId),
-      )
+      .filter((item) => {
+        if (item.kind !== "COORDINATION") return item.memberIds.includes(accountId);
+        if (item.subjectAccountId === accountId) return true;
+        if (!isStaff) return false;
+        return !staffCenterId || (item.centerId ?? SEDE_CENTER_ID) === staffCenterId;
+      })
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, limit);
   }

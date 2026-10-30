@@ -59,6 +59,7 @@ import {
   AttendanceRepository,
   CalendarActivityRepository,
   CalendarRepository,
+  CenterRepository,
   CatechistPresenceRepository,
   CatechistProfileRepository,
   CatechumenRepository,
@@ -71,6 +72,17 @@ import {
   SacramentRepository,
 } from "./domain/repositories/catechesis.repositories.js";
 import { SacramentRecords } from "./application/sacrament-records.js";
+import {
+  CreateCenterUseCase,
+  ListActiveCentersUseCase,
+  ListCentersUseCase,
+  UpdateCenterUseCase,
+} from "./application/use-cases/centers.use-cases.js";
+import { PrismaCenterRepository } from "./infrastructure/persistence/prisma/prisma-center.repository.js";
+import {
+  AdminCentersController,
+  CentersController,
+} from "./presentation/http/centers.controller.js";
 import {
   CompleteCelebrationUseCase,
   ListSacramentRecordsUseCase,
@@ -207,6 +219,8 @@ const RECORDS = SacramentRecordRepository;
     CoordinationAnnouncementsController,
     CoordinationCalendarActivitiesController,
     PublicCatechesisController,
+    CentersController,
+    AdminCentersController,
   ],
   providers: [
     // Relações entre contas (contrato partilhado, usado pelas mensagens).
@@ -225,6 +239,11 @@ const RECORDS = SacramentRecordRepository;
     { provide: ACTIVITIES, useClass: PrismaCalendarActivityRepository },
     { provide: REMINDERS, useClass: PrismaRollReminderRepository },
     { provide: RECORDS, useClass: PrismaSacramentRecordRepository },
+    { provide: CenterRepository, useClass: PrismaCenterRepository },
+    provideUseCase(ListActiveCentersUseCase, [CenterRepository]),
+    provideUseCase(ListCentersUseCase, [CenterRepository]),
+    provideUseCase(CreateCenterUseCase, [CenterRepository, Clock]),
+    provideUseCase(UpdateCenterUseCase, [CenterRepository, Clock]),
     RateLimitGuard,
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
@@ -259,6 +278,7 @@ const RECORDS = SacramentRecordRepository;
       Notifier,
       EventBus,
       SacramentRecords,
+      CenterRepository,
     ]),
     provideUseCase(UploadEnrollmentDocumentUseCase, [
       ENROLLMENTS,
@@ -300,6 +320,7 @@ const RECORDS = SacramentRecordRepository;
       AUDIT,
       Notifier,
       Clock,
+      CenterRepository,
     ]),
     // Catequista
     provideUseCase(GetMyClassUseCase, [RESOLVER, ATTENDANCE, PEOPLE]),
@@ -330,7 +351,7 @@ const RECORDS = SacramentRecordRepository;
       EVALUATIONS,
     ]),
     provideUseCase(ClassGeneration, [CLASSES, ENROLLMENTS, CALENDAR, PROFILES, PEOPLE]),
-    provideUseCase(PlanClassesUseCase, [ClassGeneration]),
+    provideUseCase(PlanClassesUseCase, [ClassGeneration, CenterRepository]),
     provideUseCase(GenerateClassesUseCase, [
       ClassGeneration,
       CLASSES,
@@ -338,6 +359,7 @@ const RECORDS = SacramentRecordRepository;
       EnrollmentActionUseCase,
       AUDIT,
       Clock,
+      CenterRepository,
     ]),
     provideUseCase(CatechistDirectory, [
       PEOPLE,
@@ -349,7 +371,7 @@ const RECORDS = SacramentRecordRepository;
     ]),
     provideUseCase(ListCatechistsUseCase, [CatechistDirectory]),
     provideUseCase(GetCatechistProfileUseCase, [CatechistDirectory]),
-    provideUseCase(SetCatechistStatusUseCase, [PEOPLE, PROFILES, AUDIT, Clock]),
+    provideUseCase(SetCatechistStatusUseCase, [PEOPLE, PROFILES, AUDIT, Clock, CenterRepository]),
     provideUseCase(ListSessionDaysUseCase, [CALENDAR, Clock]),
     provideUseCase(GetSessionUseCase, [
       CLASSES,
@@ -390,7 +412,7 @@ const RECORDS = SacramentRecordRepository;
     ]),
     provideUseCase(TrackEnrollmentUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, PEOPLE]),
     provideUseCase(ListClassesUseCase, [CLASSES, ENROLLMENTS, CALENDAR, PEOPLE, Clock]),
-    provideUseCase(CreateClassUseCase, [CLASSES, CALENDAR, PEOPLE, AUDIT, Clock]),
+    provideUseCase(CreateClassUseCase, [CLASSES, CALENDAR, PEOPLE, AUDIT, Clock, CenterRepository]),
     provideUseCase(AssignCatechistsUseCase, [
       CLASSES,
       ENROLLMENTS,
@@ -439,7 +461,13 @@ const RECORDS = SacramentRecordRepository;
       AUDIT,
       Clock,
     ]),
-    provideUseCase(CreateCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT, Clock]),
+    provideUseCase(CreateCelebrationUseCase, [
+      SacramentCelebrations,
+      SACRAMENTS,
+      AUDIT,
+      Clock,
+      CenterRepository,
+    ]),
     provideUseCase(UpdateCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT, Clock]),
     provideUseCase(DeleteCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT]),
     provideUseCase(ListCelebrationParticipantsUseCase, [SacramentCelebrations]),
@@ -516,10 +544,11 @@ const RECORDS = SacramentRecordRepository;
       Notifier,
       Mailer,
       Clock,
+      CenterRepository,
     ]),
     provideUseCase(SetAnnouncementPinnedUseCase, [ANNOUNCEMENTS, PEOPLE, AUDIT, Clock]),
     provideUseCase(DeleteAnnouncementUseCase, [ANNOUNCEMENTS, AUDIT]),
-    provideUseCase(ListMyAnnouncementsUseCase, [ANNOUNCEMENTS, Clock]),
+    provideUseCase(ListMyAnnouncementsUseCase, [ANNOUNCEMENTS, Clock, CATECHUMENS, PROFILES]),
     provideUseCase(ListCalendarActivitiesUseCase, [ACTIVITIES]),
     provideUseCase(SaveCalendarActivityUseCase, [ACTIVITIES, AUDIT, Clock]),
     provideUseCase(DeleteCalendarActivityUseCase, [ACTIVITIES, AUDIT]),

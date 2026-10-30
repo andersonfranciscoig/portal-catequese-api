@@ -21,6 +21,7 @@ import type { EnrollmentStatus } from "../../../domain/catechesis.js";
 import { Enrollment, type EnrollmentEvent } from "../../../domain/enrollment.js";
 import { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
+import type { RollReminder } from "../../../domain/roll-deadline.js";
 import type {
   RequirementCheck,
   SacramentCelebration,
@@ -38,8 +39,11 @@ import {
   EvaluationRepository,
   type EnrollmentQuery,
   AnnouncementRepository,
+  RollReminderRepository,
+  SacramentRecordRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import type { SacramentRecord } from "../../../domain/sacrament-records.js";
 
 const CALENDAR_ID = CatecheticalCalendar.ID.value;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -480,6 +484,16 @@ export class PrismaAttendanceRepository extends AttendanceRepository {
       }),
     ]);
   }
+
+  async listRollDates(classIds: string[], from: string) {
+    const ids = validIds(classIds);
+    if (!ids.length) return [];
+    return this.prisma.attendanceRecord.findMany({
+      where: { classId: { in: ids }, date: { gte: from } },
+      distinct: ["classId", "date"],
+      select: { classId: true, date: true },
+    });
+  }
 }
 
 @Injectable()
@@ -674,6 +688,137 @@ export class PrismaCatechistPresenceRepository extends CatechistPresenceReposito
   }
 }
 
+const withSelection = {
+  classes: { select: { classId: true } },
+  catechumens: { select: { catechumenId: true } },
+} as const;
+
+function toCelebration(row: {
+  id: string;
+  catecheticalYear: string;
+  type: SacramentType;
+  date: string;
+  time: string | null;
+  place: string;
+  notes: string | null;
+  createdAt: Date;
+  createdBy: string | null;
+  updatedAt: Date;
+  updatedBy: string | null;
+  completedAt: Date | null;
+  completedBy: string | null;
+  classes: { classId: string }[];
+  catechumens: { catechumenId: string }[];
+}): SacramentCelebration {
+  return {
+    id: row.id,
+    catecheticalYear: row.catecheticalYear,
+    type: row.type,
+    date: row.date,
+    time: orUndefined(row.time),
+    place: row.place,
+    notes: orUndefined(row.notes),
+    selection: {
+      classIds: row.classes.map((item) => item.classId).sort(),
+      catechumenIds: row.catechumens.map((item) => item.catechumenId).sort(),
+    },
+    createdAt: row.createdAt,
+    createdBy: orUndefined(row.createdBy),
+    updatedAt: row.updatedAt,
+    updatedBy: orUndefined(row.updatedBy),
+    completedAt: orUndefined(row.completedAt),
+    completedBy: orUndefined(row.completedBy),
+  };
+}
+
+function toRecord(row: {
+  id: string;
+  catechumenId: string;
+  type: SacramentType;
+  date: string | null;
+  parish: string | null;
+  celebrationId: string | null;
+  recordedAt: Date;
+  recordedBy: string | null;
+}): SacramentRecord {
+  return {
+    id: row.id,
+    catechumenId: row.catechumenId,
+    type: row.type,
+    date: orUndefined(row.date),
+    parish: orUndefined(row.parish),
+    celebrationId: orUndefined(row.celebrationId),
+    recordedAt: row.recordedAt,
+    recordedBy: orUndefined(row.recordedBy),
+  };
+}
+
+@Injectable()
+export class PrismaSacramentRecordRepository extends SacramentRecordRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async listForCatechumens(catechumenIds: string[]) {
+    const ids = validIds(catechumenIds);
+    if (!ids.length) return [];
+    return (
+      await this.prisma.sacramentRecord.findMany({ where: { catechumenId: { in: ids } } })
+    ).map(toRecord);
+  }
+
+  async listForCelebration(celebrationId: string) {
+    if (!UUID.test(celebrationId)) return [];
+    return (await this.prisma.sacramentRecord.findMany({ where: { celebrationId } })).map(toRecord);
+  }
+
+  async list(type?: SacramentType) {
+    return (await this.prisma.sacramentRecord.findMany({ where: type ? { type } : {} })).map(
+      toRecord,
+    );
+  }
+
+  async save(record: SacramentRecord) {
+    const data = {
+      date: record.date ?? null,
+      parish: record.parish ?? null,
+      celebrationId: record.celebrationId ?? null,
+      recordedAt: record.recordedAt,
+      recordedBy: record.recordedBy ?? null,
+    };
+    await this.prisma.sacramentRecord.upsert({
+      where: { catechumenId_type: { catechumenId: record.catechumenId, type: record.type } },
+      create: { id: record.id, catechumenId: record.catechumenId, type: record.type, ...data },
+      update: data,
+    });
+  }
+
+  async delete(catechumenId: string, type: SacramentType) {
+    if (!UUID.test(catechumenId)) return;
+    await this.prisma.sacramentRecord.deleteMany({ where: { catechumenId, type } });
+  }
+}
+
+@Injectable()
+export class PrismaRollReminderRepository extends RollReminderRepository {
+  constructor(private readonly prisma: PrismaService) {
+    super();
+  }
+
+  async claim(reminder: RollReminder) {
+    // Insere só se não existir: com várias instâncias, só uma fica com o alerta.
+    const { count } = await this.prisma.rollReminder.createMany({
+      data: [{ classId: reminder.classId, date: reminder.date, alertedAt: reminder.alertedAt }],
+      skipDuplicates: true,
+    });
+    return count === 1;
+  }
+
+  async listForClasses(classIds: string[]) {
+    return this.prisma.rollReminder.findMany({ where: { classId: { in: validIds(classIds) } } });
+  }
+}
+
 @Injectable()
 export class PrismaSacramentRepository extends SacramentRepository {
   constructor(private readonly prisma: PrismaService) {
@@ -681,31 +826,70 @@ export class PrismaSacramentRepository extends SacramentRepository {
   }
 
   async listCelebrations(catecheticalYear: string): Promise<SacramentCelebration[]> {
-    const rows = await this.prisma.sacramentCelebration.findMany({ where: { catecheticalYear } });
-    return rows.map((row) => ({ ...row, updatedBy: orUndefined(row.updatedBy) }));
+    const rows = await this.prisma.sacramentCelebration.findMany({
+      where: { catecheticalYear },
+      include: withSelection,
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    });
+    return rows.map(toCelebration);
+  }
+
+  async findCelebration(id: string) {
+    if (!UUID.test(id)) return null;
+    const row = await this.prisma.sacramentCelebration.findUnique({
+      where: { id },
+      include: withSelection,
+    });
+    return row ? toCelebration(row) : null;
   }
 
   async saveCelebration(celebration: SacramentCelebration) {
+    const id = celebration.id;
     const data = {
       date: celebration.date,
+      time: celebration.time ?? null,
       place: celebration.place,
+      notes: celebration.notes ?? null,
       updatedAt: celebration.updatedAt,
       updatedBy: celebration.updatedBy ?? null,
+      completedAt: celebration.completedAt ?? null,
+      completedBy: celebration.completedBy ?? null,
     };
-    await this.prisma.sacramentCelebration.upsert({
-      where: {
-        catecheticalYear_type: {
+    await this.prisma.$transaction([
+      this.prisma.sacramentCelebration.upsert({
+        where: { id },
+        create: {
+          id,
           catecheticalYear: celebration.catecheticalYear,
           type: celebration.type,
+          createdAt: celebration.createdAt,
+          createdBy: celebration.createdBy ?? null,
+          ...data,
         },
-      },
-      create: { catecheticalYear: celebration.catecheticalYear, type: celebration.type, ...data },
-      update: data,
-    });
+        update: data,
+      }),
+      // A seleção é substituída por inteiro.
+      this.prisma.sacramentCelebrationClass.deleteMany({ where: { celebrationId: id } }),
+      this.prisma.sacramentCelebrationCatechumen.deleteMany({ where: { celebrationId: id } }),
+      this.prisma.sacramentCelebrationClass.createMany({
+        data: validIds(celebration.selection.classIds).map((classId) => ({
+          celebrationId: id,
+          classId,
+        })),
+      }),
+      this.prisma.sacramentCelebrationCatechumen.createMany({
+        data: validIds(celebration.selection.catechumenIds).map((catechumenId) => ({
+          celebrationId: id,
+          catechumenId,
+        })),
+      }),
+    ]);
   }
 
-  async deleteCelebration(catecheticalYear: string, type: SacramentType) {
-    await this.prisma.sacramentCelebration.deleteMany({ where: { catecheticalYear, type } });
+  async deleteCelebration(id: string) {
+    if (!UUID.test(id)) return false;
+    const { count } = await this.prisma.sacramentCelebration.deleteMany({ where: { id } });
+    return count > 0;
   }
 
   async listChecks(catechumenIds: string[], sacrament: SacramentType): Promise<RequirementCheck[]> {

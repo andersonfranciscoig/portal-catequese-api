@@ -92,6 +92,66 @@ export class SacramentCandidateNotFoundError extends error(
   "sacrament_candidate_not_found",
   "Este catequizando não é candidato a esta celebração no ano em curso.",
 ) {}
+export class InvalidCelebrationError extends error("validation", "invalid_celebration") {}
+export class CelebrationNotFoundError extends error(
+  "not_found",
+  "celebration_not_found",
+  "Celebração não encontrada.",
+) {}
+
+export interface ParticipantConflict {
+  catechumenId: string;
+  fullName: string;
+  /** A outra celebração do mesmo sacramento onde já está. */
+  celebrationId: string;
+  date: string;
+}
+
+/** Um catequizando não pode estar em duas celebrações do mesmo sacramento no ano. */
+export class ParticipantConflictError extends DomainError {
+  readonly kind = "conflict";
+  readonly code = "sacraments.participant_conflict";
+  override readonly details: { conflicts: ParticipantConflict[] };
+
+  constructor(conflicts: ParticipantConflict[]) {
+    const names = conflicts.map((item) => item.fullName);
+    super(
+      conflicts.length === 1
+        ? `${names[0]} já está noutra celebração deste sacramento.`
+        : `${conflicts.length} catequizandos já estão noutra celebração deste sacramento: ${names.slice(0, 3).join(", ")}${conflicts.length > 3 ? "…" : ""}.`,
+    );
+    this.details = { conflicts };
+  }
+}
+
+export class InvalidSacramentRecordError extends error("validation", "invalid_sacrament_record") {}
+
+export interface AlreadyReceivedConflict {
+  catechumenId: string;
+  fullName: string;
+  /** O registo que já existe (de outra origem). */
+  date: string | null;
+  parish: string | null;
+  celebrationId: string | null;
+}
+
+/** Ao concluir uma celebração: alguém já tem o sacramento registado por outra via. */
+export class AlreadyReceivedError extends DomainError {
+  readonly kind = "conflict";
+  readonly code = "sacraments.already_received";
+  override readonly details: { conflicts: AlreadyReceivedConflict[] };
+
+  constructor(conflicts: AlreadyReceivedConflict[]) {
+    const names = conflicts.map((item) => item.fullName);
+    super(
+      conflicts.length === 1
+        ? `${names[0]} já tem este sacramento registado.`
+        : `${conflicts.length} catequizandos já têm este sacramento registado: ${names.slice(0, 3).join(", ")}${conflicts.length > 3 ? "…" : ""}.`,
+    );
+    this.details = { conflicts };
+  }
+}
+
 export class InvalidAnnouncementError extends error("validation", "invalid_announcement") {}
 export class InvalidCalendarActivityError extends error(
   "validation",

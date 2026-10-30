@@ -10,6 +10,8 @@ import type { AttendanceEntry, ClassAttendance } from "../class-attendance.js";
 import type { Enrollment } from "../enrollment.js";
 import type { EnrollmentDocument } from "../enrollment-document.js";
 import type { Evaluation } from "../evaluation.js";
+import type { RollReminder } from "../roll-deadline.js";
+import type { SacramentRecord } from "../sacrament-records.js";
 import type { RequirementCheck, SacramentCelebration, SacramentType } from "../sacraments.js";
 
 /*
@@ -76,6 +78,32 @@ export abstract class AttendanceRepository {
   abstract listForCatechumen(classId: string, catechumenId: string): Promise<AttendanceEntry[]>;
   /** Substitui a chamada desse dia. */
   abstract save(attendance: ClassAttendance): Promise<void>;
+  /** Dias com chamada lançada nestas turmas, a partir de `from` (inclusive). */
+  abstract listRollDates(
+    classIds: string[],
+    from: string,
+  ): Promise<{ classId: string; date: string }[]>;
+}
+
+/** Sacramentos recebidos (um registo por catequizando e tipo). */
+export abstract class SacramentRecordRepository {
+  abstract listForCatechumens(catechumenIds: string[]): Promise<SacramentRecord[]>;
+  abstract listForCelebration(celebrationId: string): Promise<SacramentRecord[]>;
+  /** Todos (de um tipo, se indicado). */
+  abstract list(type?: SacramentType): Promise<SacramentRecord[]>;
+  /** Cria ou substitui o registo desse catequizando e tipo. */
+  abstract save(record: SacramentRecord): Promise<void>;
+  abstract delete(catechumenId: string, type: SacramentType): Promise<void>;
+}
+
+/** Alertas de chamada por lançar já enviados (um por turma e encontro). */
+export abstract class RollReminderRepository {
+  /**
+   * Regista o alerta se ainda não existir. `true` só para quem o registou
+   * (com várias instâncias, só uma avisa).
+   */
+  abstract claim(reminder: RollReminder): Promise<boolean>;
+  abstract listForClasses(classIds: string[]): Promise<RollReminder[]>;
 }
 
 export abstract class EvaluationRepository {
@@ -107,9 +135,13 @@ export abstract class CatechistPresenceRepository {
 }
 
 export abstract class SacramentRepository {
+  /** Todas as celebrações do ano (de todos os sacramentos), com a seleção. */
   abstract listCelebrations(catecheticalYear: string): Promise<SacramentCelebration[]>;
+  abstract findCelebration(id: string): Promise<SacramentCelebration | null>;
+  /** Cria ou substitui (incluindo as turmas e os catequizandos escolhidos). */
   abstract saveCelebration(celebration: SacramentCelebration): Promise<void>;
-  abstract deleteCelebration(catecheticalYear: string, type: SacramentType): Promise<void>;
+  /** `false` quando não existia. */
+  abstract deleteCelebration(id: string): Promise<boolean>;
   abstract listChecks(
     catechumenIds: string[],
     sacrament: SacramentType,

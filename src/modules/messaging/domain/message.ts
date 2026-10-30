@@ -6,9 +6,12 @@ export const MESSAGE_MAX_LENGTH = 2000;
 
 export interface MessageProps {
   conversationId: string;
-  senderId: string;
+  /** `null` nas mensagens automáticas do portal (ex.: alerta de chamada por lançar). */
+  senderId: string | null;
   body: string;
   createdAt: Date;
+  /** Enviada pelo sistema, não por uma pessoa. */
+  automated?: boolean;
 }
 
 /** Mensagem de uma conversa (texto simples). */
@@ -21,11 +24,16 @@ export class Message extends Entity<MessageProps> {
         `A mensagem pode ter no máximo ${MESSAGE_MAX_LENGTH} caracteres.`,
       );
     }
-    return new Message({ ...props, body }, UniqueId.create());
+    // Sem remetente é sempre automática (e uma automática nunca tem remetente).
+    const automated = props.senderId === null || Boolean(props.automated);
+    return new Message(
+      { ...props, body, automated, senderId: automated ? null : props.senderId },
+      UniqueId.create(),
+    );
   }
 
   static restore(props: MessageProps, id: UniqueId): Message {
-    return new Message({ ...props }, id);
+    return new Message({ ...props, automated: Boolean(props.automated) }, id);
   }
 
   get conversationId() {
@@ -39,5 +47,8 @@ export class Message extends Entity<MessageProps> {
   }
   get createdAt() {
     return this.props.createdAt;
+  }
+  get automated(): boolean {
+    return Boolean(this.props.automated);
   }
 }

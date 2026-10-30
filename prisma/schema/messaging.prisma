@@ -52,7 +52,10 @@ model ConversationMember {
 model Message {
   id             String   @id @db.Uuid
   conversationId String   @map("conversation_id") @db.Uuid
-  senderId       String   @map("sender_id") @db.Uuid
+  /// Vazio nas mensagens automáticas do portal (ex.: alerta de chamada por lançar).
+  senderId       String?  @map("sender_id") @db.Uuid
+  /// Enviada pelo sistema ("Portal da Catequese"), não por uma pessoa.
+  automated      Boolean  @default(false)
   body           String
   createdAt      DateTime @map("created_at") @db.Timestamptz(3)
 

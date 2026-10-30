@@ -18,7 +18,10 @@ import {
   InMemoryConversationRepository,
   InMemoryMessageRepository,
 } from "../infrastructure/persistence/in-memory-messaging.repositories.js";
+import { Message } from "../domain/message.js";
 import { ChatAccess } from "./chat-access.js";
+import { ChatCoordinationMessenger } from "./chat-coordination-messenger.js";
+import { toMessageView } from "./views.js";
 import { ListContactsUseCase } from "./use-cases/contacts.use-case.js";
 import {
   CountUnreadConversationsUseCase,
@@ -340,6 +343,127 @@ describe("Mensagens", () => {
     const [conversation] = (await list.execute({ accountId: CATECHIST })).items;
     expect(conversation.lastMessage).toMatchObject({ body: "três", senderId: GUARDIAN });
     expect(conversation.unreadCount).toBe(3);
+  });
+
+  describe("mensagens da coordenação e do portal (CoordinationMessenger)", () => {
+    let messenger: ChatCoordinationMessenger;
+    beforeEach(() => {
+      messenger = new ChatCoordinationMessenger(
+        new ChatAccess(new Directory(), conversations),
+        conversations,
+        messages,
+        realtime,
+        push,
+        clock,
+      );
+    });
+
+    it("mensagem automática: remetente 'Portal da Catequese', por ler só para a conta", async () => {
+      const { conversationId } = await messenger.post({
+        toAccountId: CATECHIST,
+        body: "Ainda não lançaste a chamada do encontro de sábado, 10/10.",
+      });
+      // Criou a conversa da conta com a coordenação.
+      expect((await open(CATECHIST, COORDINATION)).id).toBe(conversationId);
+
+      const [message] = (await page.execute({ accountId: CATECHIST, conversationId })).items;
+      expect(message).toMatchObject({
+        sender: { accountId: null, name: "Portal da Catequese", role: null },
+        automated: true,
+        mine: false,
+      });
+      expect(
+        (await page.execute({ accountId: COORDINATOR, conversationId })).items[0],
+      ).toMatchObject({ automated: true, mine: false });
+
+      expect(await unreadOf(CATECHIST, conversationId)).toBe(1);
+      expect(await unreadOf(COORDINATOR, conversationId)).toBe(0);
+      const [conversation] = (await list.execute({ accountId: CATECHIST })).items;
+      expect(conversation.lastMessage).toMatchObject({ senderId: null });
+
+      expect(push.sent).toEqual([
+        {
+          accountIds: [CATECHIST],
+          payload: expect.objectContaining({ title: "Portal da Catequese" }),
+        },
+      ]);
+      expect(realtime.to(COORDINATOR, "message.created")).toHaveLength(1);
+      expect(realtime.to(CATECHIST, "message.created")[0].data).toMatchObject({
+        message: { automated: true, sender: { accountId: null } },
+      });
+
+      // O catequista responde normalmente na mesma conversa.
+      clock.advance(1000);
+      const reply = await send.execute({
+        accountId: CATECHIST,
+        conversationId,
+        body: "Já lancei, obrigado.",
+      });
+      expect(reply).toMatchObject({ automated: false, mine: true });
+      expect(await unreadOf(CATECHIST, conversationId)).toBe(0);
+    });
+
+    it("em nome de alguém da equipa é uma mensagem normal dessa pessoa", async () => {
+      const first = await messenger.post({
+        toAccountId: CATECHIST,
+        fromAccountId: COORDINATOR,
+        body: "Registei a tua presença no encontro de sábado, 10/10.",
+      });
+      const second = await messenger.post({
+        toAccountId: CATECHIST,
+        fromAccountId: COORDINATOR,
+        body: "Obrigada!",
+      });
+      expect(second.conversationId).toBe(first.conversationId);
+      const items = (
+        await page.execute({ accountId: CATECHIST, conversationId: first.conversationId })
+      ).items;
+      expect(items.map((item) => item.body)).toEqual([
+        "Registei a tua presença no encontro de sábado, 10/10.",
+        "Obrigada!",
+      ]);
+      expect(items[0]).toMatchObject({
+        automated: false,
+        sender: { accountId: COORDINATOR, name: "Carla Coordenadora", role: "COORDINATION" },
+      });
+      expect(await unreadOf(CATECHIST, first.conversationId)).toBe(2);
+      expect(await unreadOf(COORDINATOR, first.conversationId)).toBe(0);
+      expect(push.sent[0]).toMatchObject({
+        accountIds: [CATECHIST],
+        payload: { title: "Coordenação da catequese" },
+      });
+    });
+
+    it("recusa contas desconhecidas ou bloqueadas", async () => {
+      await expect(messenger.post({ toAccountId: BLOCKED, body: "Olá" })).rejects.toThrow(
+        ConversationNotAllowedError,
+      );
+    });
+  });
+
+  it("mapeia o automated de cada mensagem", () => {
+    const automated = Message.create({
+      conversationId: "c",
+      senderId: null,
+      body: "Alerta",
+      createdAt: new Date(),
+    });
+    expect(toMessageView(automated, CATECHIST, new Map())).toMatchObject({
+      sender: { accountId: null, name: "Portal da Catequese", role: null },
+      mine: false,
+      automated: true,
+    });
+    const normal = Message.create({
+      conversationId: "c",
+      senderId: GUARDIAN,
+      body: "Olá",
+      createdAt: new Date(),
+    });
+    expect(toMessageView(normal, GUARDIAN, new Map())).toMatchObject({
+      sender: { accountId: GUARDIAN, name: "Conta removida" },
+      mine: true,
+      automated: false,
+    });
   });
 
   it("recusa mensagens vazias", async () => {

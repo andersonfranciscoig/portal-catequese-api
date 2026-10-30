@@ -1,5 +1,6 @@
 import type { CatechesisLevel } from "./catechesis.js";
 import type { EnrollmentDocumentKind } from "./enrollment-document.js";
+import { PASS_ATTENDANCE, PASS_GRADE } from "./evaluation.js";
 
 type ValueOf<T> = T[keyof T];
 
@@ -57,15 +58,108 @@ export function isCheckable(
   return REQUIREMENTS[type].includes(requirement) && !FROM_RECORD.includes(requirement);
 }
 
-/** Data e local da celebração num ano catequético. */
+/** Quem a coordenação escolheu para uma celebração (tudo vazio = modo automático). */
+export interface CelebrationSelection {
+  /** Turmas inteiras. */
+  classIds: string[];
+  /** Catequizandos escolhidos um a um (de qualquer turma do ano). */
+  catechumenIds: string[];
+}
+
+/**
+ * Uma celebração de um sacramento no ano. Pode haver várias do mesmo tipo,
+ * cada uma com o seu grupo de participantes.
+ */
 export interface SacramentCelebration {
+  id: string;
   catecheticalYear: string;
   type: SacramentType;
   /** YYYY-MM-DD */
   date: string;
+  /** "HH:mm" */
+  time?: string;
   place: string;
+  notes?: string;
+  selection: CelebrationSelection;
+  createdAt: Date;
+  createdBy?: string;
   updatedAt: Date;
   updatedBy?: string;
+  /** Concluída: a coordenação registou quem recebeu de facto. */
+  completedAt?: Date;
+  completedBy?: string;
+}
+
+export type CelebrationMode = "AUTO" | "MANUAL";
+export type CelebrationStatus = "SCHEDULED" | "COMPLETED";
+
+/** MANUAL quando a coordenação escolheu turmas ou catequizandos. */
+export function celebrationMode(selection: CelebrationSelection): CelebrationMode {
+  return selection.classIds.length || selection.catechumenIds.length ? "MANUAL" : "AUTO";
+}
+
+/** Ordem das celebrações: data, hora, criação (e id, para ser sempre a mesma). */
+export function compareCelebrations(a: SacramentCelebration, b: SacramentCelebration): number {
+  return (
+    a.date.localeCompare(b.date) ||
+    (a.time ?? "").localeCompare(b.time ?? "") ||
+    a.createdAt.getTime() - b.createdAt.getTime() ||
+    a.id.localeCompare(b.id)
+  );
+}
+
+const decimal = (value: number) => value.toFixed(1).replace(".", ",");
+
+/**
+ * Aproveitamento para o sacramento, avaliado pelo sistema: média ≥ 10,
+ * presença ≥ 75% (sem chamadas não penaliza) e todos os requisitos cumpridos.
+ * Sem notas lançadas não é apto. `missing` são os requisitos em falta (nomes).
+ */
+export function sacramentAptitude(facts: {
+  average?: number;
+  attendanceRate?: number;
+  missing: string[];
+}): { eligible: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const { average, attendanceRate, missing } = facts;
+  if (average === undefined) reasons.push("Sem notas lançadas");
+  else if (average < PASS_GRADE)
+    reasons.push(`Média ${decimal(average)} (abaixo de ${PASS_GRADE})`);
+  else reasons.push(`Média ${decimal(average)}`);
+  if (attendanceRate === undefined) reasons.push("Sem chamadas lançadas");
+  else if (attendanceRate < PASS_ATTENDANCE)
+    reasons.push(`Presença ${attendanceRate}% (abaixo de ${PASS_ATTENDANCE}%)`);
+  else reasons.push(`Presença ${attendanceRate}%`);
+  if (missing.length) reasons.push(`Falta: ${missing.join(", ")}`);
+  return {
+    eligible:
+      average !== undefined &&
+      average >= PASS_GRADE &&
+      (attendanceRate === undefined || attendanceRate >= PASS_ATTENDANCE) &&
+      !missing.length,
+    reasons,
+  };
+}
+
+/**
+ * Reparte grupos inteiros (as turmas) por `slots` celebrações, equilibrando o
+ * número de pessoas: os grupos maiores primeiro, cada um para a celebração com
+ * menos gente (no empate, a mais cedo). Sempre o mesmo resultado.
+ */
+export function distributeGroups<T>(groups: { key: string; items: T[] }[], slots: number): T[][] {
+  const buckets: T[][] = Array.from({ length: slots }, () => []);
+  if (!slots) return buckets;
+  const ordered = [...groups].sort(
+    (a, b) => b.items.length - a.items.length || a.key.localeCompare(b.key),
+  );
+  for (const group of ordered) {
+    let target = 0;
+    for (let index = 1; index < slots; index++) {
+      if (buckets[index].length < buckets[target].length) target = index;
+    }
+    buckets[target].push(...group.items);
+  }
+  return buckets;
 }
 
 /** Requisito marcado pela coordenação para um candidato. */

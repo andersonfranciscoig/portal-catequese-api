@@ -64,46 +64,32 @@ async function confirmedAt(
 }
 
 describe("Sacramentos", () => {
-  it("celebrações do ano: o Batismo na Vigília Pascal, as outras por marcar", async () => {
+  it("resumo do ano: sem celebrações implícitas, candidatos por sacramento", async () => {
     await confirmedAt("COMMUNION_3", { fullName: "Ana Comunhão" });
     const overview = await ctx.sacraments.overview.execute();
+    // A Vigília Pascal só é sugerida pela UI ao criar o Batismo.
     expect(easterVigil(2027)).toBe("2027-03-27");
-    expect(overview.celebrations).toEqual([
-      expect.objectContaining({ type: "BAPTISM", date: "2027-03-27", scheduled: false }),
-      expect.objectContaining({
+    expect(overview.celebrations).toEqual([]);
+    expect(overview.types).toEqual([
+      { type: "BAPTISM", level: "BAPTISM_3", candidates: 0, ready: 0, assigned: 0, unassigned: 0 },
+      {
         type: "FIRST_COMMUNION",
-        date: undefined,
         level: "COMMUNION_3",
         candidates: 1,
         ready: 0,
-      }),
-      expect.objectContaining({ type: "CONFIRMATION", candidates: 0 }),
+        assigned: 0,
+        unassigned: 1,
+      },
+      {
+        type: "CONFIRMATION",
+        level: "CONFIRMATION_3",
+        candidates: 0,
+        ready: 0,
+        assigned: 0,
+        unassigned: 0,
+      },
     ]);
     expect(overview.received).toEqual({ BAPTISM: 1, FIRST_COMMUNION: 0 });
-
-    const set = await ctx.sacraments.setCelebration.execute({
-      actorId: IDS.coordinator,
-      type: "FIRST_COMMUNION",
-      celebration: { date: "2027-05-30", place: "  Igreja Cristo Rei da Paz " },
-    });
-    expect(set).toMatchObject({
-      date: "2027-05-30",
-      place: "Igreja Cristo Rei da Paz",
-      scheduled: true,
-    });
-    const outside = await ctx.sacraments.setCelebration.execute({
-      actorId: IDS.coordinator,
-      type: "CONFIRMATION",
-      celebration: { date: "2027-09-01", place: "Sé Catedral" },
-    });
-    expect(outside).toMatchObject({ date: "2027-09-01", place: "Sé Catedral", scheduled: true });
-    const reset = await ctx.sacraments.setCelebration.execute({
-      actorId: IDS.coordinator,
-      type: "FIRST_COMMUNION",
-      celebration: null,
-    });
-    expect(reset).toMatchObject({ date: undefined, scheduled: false });
-    expect(ctx.activity.entries.at(-1)?.summary).toBe("Retirou a data da Primeira Comunhão");
   });
 
   it("requisitos: o percurso e os documentos contam sozinhos; o resto marca a coordenação", async () => {

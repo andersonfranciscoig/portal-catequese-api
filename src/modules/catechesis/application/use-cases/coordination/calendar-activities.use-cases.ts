@@ -17,14 +17,8 @@ import type {
   CalendarRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
-import { easterVigil, SACRAMENT_TYPES, type SacramentType } from "../../../domain/sacraments.js";
-import { PARISH_CHURCH } from "./sacraments.use-cases.js";
-
-const SACRAMENT_LABEL: Record<SacramentType, string> = {
-  BAPTISM: "Batismo",
-  FIRST_COMMUNION: "Primeira Comunhão",
-  CONFIRMATION: "Crisma",
-};
+import { compareCelebrations } from "../../../domain/sacraments.js";
+import { SACRAMENT_LABEL } from "./sacraments.use-cases.js";
 
 export interface CalendarActivityView {
   id: string;
@@ -168,25 +162,20 @@ export class ListPortalCalendarUseCase {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     const today = luandaToday(this.clock.now());
+    // Cada celebração marcada pela coordenação (já não há datas por omissão).
     const saved = await this.sacraments.listCelebrations(calendar.label);
-    const year = Number(calendar.label.slice(5, 9));
-    const sacraments: PortalCalendarEvent[] = SACRAMENT_TYPES.flatMap((type) => {
-      const celebration = saved.find((item) => item.type === type);
-      const startsAt = celebration?.date ?? (type === "BAPTISM" ? easterVigil(year) : undefined);
-      if (!startsAt || startsAt < today) return [];
-      const at = (celebration?.updatedAt ?? calendar.updatedAt).toISOString();
-      return [
-        {
-          id: `sacrament:${type}`,
-          title: SACRAMENT_LABEL[type],
-          description: celebration?.place ?? PARISH_CHURCH,
-          kind: "SACRAMENT" as const,
-          startsAt,
-          createdAt: at,
-          updatedAt: at,
-        },
-      ];
-    });
+    const sacraments: PortalCalendarEvent[] = saved
+      .filter((celebration) => celebration.date >= today)
+      .sort(compareCelebrations)
+      .map((celebration) => ({
+        id: `sacrament:${celebration.id}`,
+        title: SACRAMENT_LABEL[celebration.type],
+        description: [celebration.time, celebration.place].filter(Boolean).join(" · "),
+        kind: "SACRAMENT" as const,
+        startsAt: celebration.date,
+        createdAt: celebration.createdAt.toISOString(),
+        updatedAt: celebration.updatedAt.toISOString(),
+      }));
     const activities = (await this.activities.list()).flatMap((item) => {
       const end = item.endsOn ?? item.startsOn;
       if (end < today) return [];

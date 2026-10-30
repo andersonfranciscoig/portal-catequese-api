@@ -24,7 +24,8 @@ function toConversation(row: ConversationRow): Conversation {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastMessage:
-        row.lastMessageAt && row.lastMessageSenderId && row.lastMessageBody !== null
+        // Sem remetente: a última é uma mensagem automática.
+        row.lastMessageAt && row.lastMessageBody !== null
           ? {
               body: row.lastMessageBody,
               sentAt: row.lastMessageAt,
@@ -43,6 +44,7 @@ function toMessage(row: MessageRow): Message {
       senderId: row.senderId,
       body: row.body,
       createdAt: row.createdAt,
+      automated: row.automated,
     },
     UniqueId.from(row.id),
   );
@@ -142,13 +144,17 @@ export class PrismaConversationRepository extends ConversationRepository {
   async unreadCounts(accountId: string, conversationIds: string[]) {
     const ids = [...new Set(conversationIds)].filter((id) => UUID.test(id));
     if (!UUID.test(accountId) || !ids.length) return new Map<string, number>();
+    // As mensagens automáticas (sem remetente) contam como por ler só para a
+    // conta da conversa; a equipa recebe o resumo dos alertas à parte.
     const rows = await this.prisma.$queryRaw<{ conversation_id: string; count: number }[]>`
       SELECT m."conversation_id", COUNT(*)::int AS "count"
       FROM "messaging"."messages" m
+      JOIN "messaging"."conversations" c ON c."id" = m."conversation_id"
       LEFT JOIN "messaging"."conversation_members" r
         ON r."conversation_id" = m."conversation_id" AND r."account_id" = ${accountId}::uuid
       WHERE m."conversation_id" = ANY(${ids}::uuid[])
-        AND m."sender_id" <> ${accountId}::uuid
+        AND m."sender_id" IS DISTINCT FROM ${accountId}::uuid
+        AND (NOT m."automated" OR c."subject_account_id" = ${accountId}::uuid)
         AND (r."last_read_at" IS NULL OR m."created_at" > r."last_read_at")
       GROUP BY m."conversation_id"`;
     return new Map(rows.map((row) => [row.conversation_id, Number(row.count)]));
@@ -167,6 +173,7 @@ export class PrismaMessageRepository extends MessageRepository {
         id: message.id.value,
         conversationId: message.conversationId,
         senderId: message.senderId,
+        automated: message.automated,
         body: message.body,
         createdAt: message.createdAt,
       },

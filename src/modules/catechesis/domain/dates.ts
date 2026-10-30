@@ -24,6 +24,17 @@ export function addDays(value: string, days: number): string {
   return toIsoDate(date);
 }
 
+/** Soma meses (o dia fica no último do mês se não existir: 31/01 + 1 → 28/02). */
+export function addMonths(value: string, months: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const target = new Date(Date.UTC(year, month - 1 + months, 1));
+  const last = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  target.setUTCDate(Math.min(day, last));
+  return toIsoDate(target);
+}
+
 export function weekday(value: string): number {
   return parse(value).getUTCDay();
 }

@@ -1,15 +1,29 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
+import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
-import type { CatechesisLevel, EnrollmentStatus } from "../../../domain/catechesis.js";
-import { attendanceTotals } from "../../../domain/class-attendance.js";
+import {
+  CatechesisLevel,
+  type CatechesisLevel as Level,
+  type EnrollmentStatus,
+} from "../../../domain/catechesis.js";
+import type { CatechesisClass } from "../../../domain/catechesis-class.js";
+import type { Catechumen } from "../../../domain/catechumen.js";
+import { attendanceTotals, type ClassAttendance } from "../../../domain/class-attendance.js";
+import { addMonths, isIsoDate } from "../../../domain/dates.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
 import {
   CalendarNotDefinedError,
+  CelebrationNotFoundError,
+  ClassNotFoundError,
+  InvalidCelebrationError,
   InvalidSacramentError,
+  ParticipantConflictError,
   SacramentCandidateNotFoundError,
+  type ParticipantConflict,
 } from "../../../domain/errors/catechesis.errors.js";
+import { averageGrade, type Evaluation } from "../../../domain/evaluation.js";
 import type {
   AttendanceRepository,
   CalendarRepository,
@@ -17,24 +31,35 @@ import type {
   ClassRepository,
   EnrollmentDocumentRepository,
   EnrollmentRepository,
+  EvaluationRepository,
+  SacramentRecordRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import type { SacramentRecord } from "../../../domain/sacrament-records.js";
 import {
   CANDIDATE_LEVEL,
-  easterVigil,
+  celebrationMode,
+  compareCelebrations,
+  distributeGroups,
   isCheckable,
   requirementStates,
   SACRAMENT_TYPES,
+  sacramentAptitude,
+  type CelebrationMode,
+  type CelebrationSelection,
+  type CelebrationStatus,
   type CheckableRequirement,
   type RequirementState,
+  type SacramentCelebration,
   type SacramentRequirement,
   type SacramentType,
 } from "../../../domain/sacraments.js";
+import { classShortLabel } from "../../messages.js";
 
-/** Local por omissão das celebrações. */
+/** Local habitual das celebrações (a UI sugere-o ao criar). */
 export const PARISH_CHURCH = "Igreja Cristo Rei da Paz";
 
-const SACRAMENT_LABEL: Record<SacramentType, string> = {
+export const SACRAMENT_LABEL: Record<SacramentType, string> = {
   BAPTISM: "Batismo",
   FIRST_COMMUNION: "Primeira Comunhão",
   CONFIRMATION: "Crisma",
@@ -50,27 +75,57 @@ const REQUIREMENT_LABEL: Record<SacramentRequirement, string> = {
   PARENTS_MEETING: "Encontro de preparação com os pais",
 };
 
-/** Matrículas aceites pela coordenação: quem conta como candidato. */
+/** Matrículas aceites pela coordenação: quem conta como candidato ou participante. */
 const ACCEPTED: EnrollmentStatus[] = ["APPROVED", "PENDING_CONFIRMATION", "CONFIRMED"];
 
 /** Matrículas em curso no ano (para os sacramentos já recebidos). */
 const ACTIVE: EnrollmentStatus[] = [...ACCEPTED, "SUBMITTED", "UNDER_REVIEW", "WAITLIST"];
 
+/** Uma celebração pode ser até 3 meses depois do fim da catequese. */
+const MONTHS_AFTER_YEAR = 3;
+
+const LEVEL_ORDER = Object.values(CatechesisLevel);
+
 export interface CelebrationView {
+  id: string;
   type: SacramentType;
-  /** YYYY-MM-DD; vazio enquanto a coordenação não a marcar. */
-  date?: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** "HH:mm" */
+  time: string | null;
   place: string;
-  /** Data e local definidos pela coordenação (não os por omissão). */
-  scheduled: boolean;
-  level: CatechesisLevel;
+  notes: string | null;
+  mode: CelebrationMode;
+  selection: CelebrationSelection;
+  /** Efetivos (MANUAL: os escolhidos; AUTO: os sugeridos). */
+  participants: number;
+  /** Destes, quantos têm todos os requisitos. */
+  ready: number;
+  /** Concluída quando a coordenação registou quem recebeu. */
+  status: CelebrationStatus;
+  completedAt: string | null;
+  /** Quantos receberam nesta celebração (registos dela). */
+  receivedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SacramentTypeSummary {
+  type: SacramentType;
+  /** Nível candidato por omissão. */
+  level: Level;
   candidates: number;
   ready: number;
+  /** Candidatos já nalguma celebração (manual ou automática). */
+  assigned: number;
+  unassigned: number;
 }
 
 export interface SacramentsOverviewView {
   catecheticalYear: string;
+  /** Todas as celebrações do ano, por data. */
   celebrations: CelebrationView[];
+  types: SacramentTypeSummary[];
   /** Catequizandos com matrícula no ano que já receberam cada sacramento. */
   received: { BAPTISM: number; FIRST_COMMUNION: number };
   active: number;
@@ -82,7 +137,7 @@ export interface CandidateView {
   enrollmentCode: string;
   fullName: string;
   birthDate: string;
-  level: CatechesisLevel;
+  level: Level;
   classSection?: string;
   guardianName?: string;
   /** Frequência no ano (só encontros com chamada lançada). */
@@ -91,11 +146,131 @@ export interface CandidateView {
   ready: boolean;
 }
 
+export type ParticipantSource = "SUGGESTED" | "CLASS" | "INDIVIDUAL";
+
+/** Um catequizando avaliado para um sacramento (nota, presença e requisitos). */
+export interface ParticipantView extends Omit<CandidateView, "attendanceRate"> {
+  classId: string | null;
+  /** "Comunhão · 3.º ano · A" */
+  classLabel: string | null;
+  /** Média das notas (0–20). */
+  average: number | null;
+  /** Percentagem de presenças. */
+  attendanceRate: number | null;
+  /** Média ≥ 10, presença ≥ 75% e requisitos cumpridos. */
+  eligible: boolean;
+  /** Porquê: "Média 14,5", "Presença 92%", "Falta: Certidão de batismo"… */
+  reasons: string[];
+  /** Porque está nesta celebração. */
+  source: ParticipantSource;
+}
+
+export interface SelectableClassView {
+  id: string;
+  label: string;
+  level: Level;
+  /** Matrículas confirmadas. */
+  members: number;
+  /** Quantos o sistema considera aptos para este sacramento. */
+  eligible: number;
+  /** Nível que prepara este sacramento (aparece primeiro). */
+  isCandidateLevel: boolean;
+  /** A turma inteira já está noutra celebração do mesmo sacramento. */
+  takenBy: { celebrationId: string; date: string } | null;
+}
+
 export type CandidateFilter = "ALL" | "READY" | "PENDING";
 
 const normalize = (value: string) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-/** Candidatos de cada celebração do ano e o estado dos requisitos. */
+const byName = (a: { fullName: string }, b: { fullName: string }) =>
+  a.fullName.localeCompare(b.fullName, "pt");
+
+/** Sugestão: melhor média primeiro, depois melhor presença (sem chamadas no fim) e o nome. */
+const bySuggestion = (a: ParticipantView, b: ParticipantView) =>
+  (b.average ?? -1) - (a.average ?? -1) ||
+  (b.attendanceRate ?? -1) - (a.attendanceRate ?? -1) ||
+  byName(a, b);
+
+const formatDate = (date: string) => date.split("-").reverse().join("/");
+
+interface Pair {
+  enrollment: Enrollment;
+  catechumen: Catechumen;
+}
+
+/**
+ * Dados do ano lidos uma vez por pedido (matrículas aceites, turmas, chamadas e
+ * notas de cada turma), partilhados pelos vários sacramentos.
+ */
+export class SacramentYear {
+  private pairsLoad?: Promise<Pair[]>;
+  private classesLoad?: Promise<CatechesisClass[]>;
+  private recordsLoad?: Promise<SacramentRecord[]>;
+  private readonly rolls = new Map<string, Promise<ClassAttendance[]>>();
+  private readonly grades = new Map<string, Promise<Evaluation[]>>();
+
+  constructor(
+    readonly calendar: CatecheticalCalendar,
+    private readonly deps: {
+      enrollments: EnrollmentRepository;
+      catechumens: CatechumenRepository;
+      classes: ClassRepository;
+      attendance: AttendanceRepository;
+      evaluations: EvaluationRepository;
+      records: SacramentRecordRepository;
+    },
+  ) {}
+
+  /** Sacramentos já registados dos catequizandos do ano. */
+  records(): Promise<SacramentRecord[]> {
+    this.recordsLoad ??= this.pairs().then((pairs) =>
+      this.deps.records.listForCatechumens(pairs.map((pair) => pair.catechumen.id.value)),
+    );
+    return this.recordsLoad;
+  }
+
+  /** Matrículas aceites do ano, com o catequizando. */
+  pairs(): Promise<Pair[]> {
+    this.pairsLoad ??= (async () => {
+      const enrollments = (
+        await this.deps.enrollments.list({ catecheticalYear: this.calendar.label })
+      ).filter((item) => ACCEPTED.includes(item.status));
+      const catechumens = await this.deps.catechumens.findByIds(
+        enrollments.map((item) => item.catechumenId),
+      );
+      const byId = new Map(catechumens.map((item) => [item.id.value, item]));
+      return enrollments.flatMap((enrollment) => {
+        const catechumen = byId.get(enrollment.catechumenId);
+        return catechumen ? [{ enrollment, catechumen }] : [];
+      });
+    })();
+    return this.pairsLoad;
+  }
+
+  classes(): Promise<CatechesisClass[]> {
+    this.classesLoad ??= this.deps.classes.listByYear(this.calendar.label);
+    return this.classesLoad;
+  }
+
+  rollsOf(classId: string) {
+    if (!this.rolls.has(classId))
+      this.rolls.set(classId, this.deps.attendance.listForClass(classId));
+    return this.rolls.get(classId)!;
+  }
+
+  gradesOf(classId: string) {
+    if (!this.grades.has(classId))
+      this.grades.set(classId, this.deps.evaluations.listForClass(classId));
+    return this.grades.get(classId)!;
+  }
+}
+
+/** A turma onde a matrícula está confirmada (só essas têm chamadas e notas). */
+const classOf = ({ enrollment }: Pair) =>
+  enrollment.isConfirmed && enrollment.classId ? enrollment.classId : null;
+
+/** Candidatos de cada sacramento, o estado dos requisitos e o aproveitamento. */
 export class SacramentCandidates {
   constructor(
     private readonly calendars: CalendarRepository,
@@ -103,9 +278,11 @@ export class SacramentCandidates {
     private readonly catechumens: CatechumenRepository,
     private readonly classes: ClassRepository,
     private readonly attendance: AttendanceRepository,
+    private readonly evaluations: EvaluationRepository,
     private readonly documents: EnrollmentDocumentRepository,
     private readonly sacraments: SacramentRepository,
     private readonly people: PeopleDirectory,
+    private readonly records: SacramentRecordRepository,
   ) {}
 
   async calendar(): Promise<CatecheticalCalendar> {
@@ -114,53 +291,56 @@ export class SacramentCandidates {
     return calendar;
   }
 
-  async celebrations(calendar: CatecheticalCalendar) {
-    const saved = await this.sacraments.listCelebrations(calendar.label);
-    return SACRAMENT_TYPES.map((type) => {
-      const celebration = saved.find((item) => item.type === type);
-      if (celebration)
-        return { type, date: celebration.date, place: celebration.place, scheduled: true };
-      // O Batismo é na Vigília Pascal; as outras datas marca-as a coordenação.
-      const date = type === "BAPTISM" ? easterVigil(Number(calendar.label.slice(5, 9))) : undefined;
-      return { type, date, place: PARISH_CHURCH, scheduled: false };
+  /** Dados do ano para um pedido (com cache por turma). */
+  async year(calendar?: CatecheticalCalendar): Promise<SacramentYear> {
+    return new SacramentYear(calendar ?? (await this.calendar()), {
+      enrollments: this.enrollments,
+      catechumens: this.catechumens,
+      classes: this.classes,
+      attendance: this.attendance,
+      evaluations: this.evaluations,
+      records: this.records,
     });
   }
 
-  /** Matrículas do ano que fazem de alguém candidato ao sacramento. */
-  private async candidateEnrollments(calendar: CatecheticalCalendar, type: SacramentType) {
-    const enrollments = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter(
-      (item) => item.level === CANDIDATE_LEVEL[type] && ACCEPTED.includes(item.status),
+  /**
+   * Matrículas do ano que podem receber o sacramento: sem quem já o tem
+   * registado (ex.: recebeu-o numa celebração concluída). `reopen` (ao
+   * concluir ou corrigir uma celebração) conta com todos, para se saber quem
+   * lá estava e avisar de quem já o tinha de outra origem.
+   */
+  async eligiblePairs(year: SacramentYear, type: SacramentType, reopen?: string): Promise<Pair[]> {
+    if (reopen) return year.pairs();
+    const received = new Set(
+      (await year.records()).filter((item) => item.type === type).map((item) => item.catechumenId),
     );
-    const catechumens = await this.catechumens.findByIds(
-      enrollments.map((item) => item.catechumenId),
-    );
-    const byId = new Map(catechumens.map((item) => [item.id.value, item]));
-    return enrollments.flatMap((enrollment) => {
-      const catechumen = byId.get(enrollment.catechumenId);
-      // Quem já foi batizado não volta a ser candidato ao Batismo.
-      if (!catechumen || (type === "BAPTISM" && catechumen.baptized)) return [];
-      return [{ enrollment, catechumen }];
-    });
+    return (await year.pairs()).filter(({ catechumen }) => !received.has(catechumen.id.value));
   }
 
-  async list(type: SacramentType, calendar?: CatecheticalCalendar): Promise<CandidateView[]> {
-    calendar ??= await this.calendar();
-    const pairs = await this.candidateEnrollments(calendar, type);
+  /** Candidatos: o nível que prepara o sacramento. */
+  async candidatePairs(year: SacramentYear, type: SacramentType): Promise<Pair[]> {
+    return (await this.eligiblePairs(year, type)).filter(
+      ({ enrollment }) => enrollment.level === CANDIDATE_LEVEL[type],
+    );
+  }
+
+  /** Requisitos, notas e presença de cada um (por ordem alfabética). */
+  async assess(
+    year: SacramentYear,
+    type: SacramentType,
+    pairs: Pair[],
+    source: ParticipantSource = "SUGGESTED",
+  ): Promise<ParticipantView[]> {
     if (!pairs.length) return [];
     const enrollmentIds = pairs.map(({ enrollment }) => enrollment.id.value);
     const catechumenIds = pairs.map(({ catechumen }) => catechumen.id.value);
-    const classIds = [
-      ...new Set(
-        pairs.flatMap(({ enrollment }) =>
-          enrollment.isConfirmed && enrollment.classId ? [enrollment.classId] : [],
-        ),
-      ),
-    ];
-    const [documents, checks, classes, rolls, guardians] = await Promise.all([
+    const classIds = [...new Set(pairs.flatMap((pair) => classOf(pair) ?? []))];
+    const [documents, checks, classes, rolls, grades, guardians] = await Promise.all([
       this.documents.listForEnrollments(enrollmentIds),
       this.sacraments.listChecks(catechumenIds, type),
-      this.classes.findByIds(classIds),
-      Promise.all(classIds.map((id) => this.attendance.listForClass(id))),
+      year.classes(),
+      Promise.all(classIds.map((id) => year.rollsOf(id))),
+      Promise.all(classIds.map((id) => year.gradesOf(id))),
       this.people.findMany(
         pairs.flatMap(({ catechumen }) =>
           catechumen.guardianAccountId ? [catechumen.guardianAccountId] : [],
@@ -168,12 +348,15 @@ export class SacramentCandidates {
       ),
     ]);
     const marks = rolls.flat();
+    const evaluations = grades.flat();
     const guardianName = new Map(guardians.map((person) => [person.id, person.fullName]));
 
     return pairs
-      .map(({ enrollment, catechumen }) => {
+      .map((pair): ParticipantView => {
+        const { enrollment, catechumen } = pair;
         const id = catechumen.id.value;
-        const classId = enrollment.isConfirmed ? enrollment.classId : undefined;
+        const classId = classOf(pair);
+        const klass = classes.find((item) => item.id.value === classId);
         const requirements = requirementStates(type, {
           baptized: catechumen.baptized,
           firstCommunion: catechumen.firstCommunion,
@@ -193,6 +376,18 @@ export class SacramentCandidates {
               .filter((mark) => mark.catechumenId === id)
               .map((mark) => ({ date: roll.date, status: mark.status })),
           );
+        const rate = attendanceTotals(entries).rate;
+        const evaluation = evaluations.find(
+          (item) => item.classId === classId && item.catechumenId === id,
+        );
+        const average = evaluation ? averageGrade(evaluation.grades) : undefined;
+        const aptitude = sacramentAptitude({
+          average,
+          attendanceRate: rate,
+          missing: requirements
+            .filter((item) => !item.met)
+            .map((item) => REQUIREMENT_LABEL[item.requirement]),
+        });
         return {
           catechumenId: id,
           enrollmentId: enrollment.id.value,
@@ -200,21 +395,35 @@ export class SacramentCandidates {
           fullName: catechumen.fullName,
           birthDate: catechumen.birthDate,
           level: enrollment.level,
-          classSection: classes.find((item) => item.id.value === classId)?.section,
+          classSection: klass?.section,
           guardianName: catechumen.guardianAccountId
             ? guardianName.get(catechumen.guardianAccountId)
             : undefined,
-          attendanceRate: attendanceTotals(entries).rate,
           requirements,
           ready: requirements.every((item) => item.met),
+          classId: klass ? klass.id.value : null,
+          classLabel: klass ? classShortLabel(klass) : null,
+          average: average ?? null,
+          attendanceRate: rate ?? null,
+          eligible: aptitude.eligible,
+          reasons: aptitude.reasons,
+          source,
         };
       })
-      .sort((a, b) => a.fullName.localeCompare(b.fullName, "pt"));
+      .sort(byName);
+  }
+
+  /** Candidatos de um sacramento no ano (o nível que o prepara). */
+  async list(type: SacramentType, calendar?: CatecheticalCalendar): Promise<CandidateView[]> {
+    const year = await this.year(calendar);
+    const assessed = await this.assess(year, type, await this.candidatePairs(year, type));
+    return assessed.map((item) => ({ ...item, attendanceRate: item.attendanceRate ?? undefined }));
   }
 
   /** A matrícula que faz do catequizando candidato (ou erro). */
   async enrollmentOf(type: SacramentType, catechumenId: string): Promise<Enrollment> {
-    const pair = (await this.candidateEnrollments(await this.calendar(), type)).find(
+    const year = await this.year();
+    const pair = (await this.candidatePairs(year, type)).find(
       ({ catechumen }) => catechumen.id.value === catechumenId,
     );
     if (!pair) throw new SacramentCandidateNotFoundError();
@@ -237,44 +446,270 @@ export class SacramentCandidates {
   }
 }
 
-/** Celebrações do ano, com os candidatos prontos de cada uma. */
+/** Celebrações de um sacramento no ano e os participantes de cada uma. */
+export interface SacramentPlan {
+  type: SacramentType;
+  /** Por data. */
+  celebrations: SacramentCelebration[];
+  /** Por celebração. */
+  participants: Map<string, ParticipantView[]>;
+  /** Por celebração: quantos têm o registo dela (receberam de facto). */
+  received: Map<string, number>;
+  /** Candidatos do nível que prepara o sacramento (sem quem já o recebeu). */
+  candidates: ParticipantView[];
+}
+
+/** Concluída (a não ser a que se está a corrigir). */
+const isCompleted = (celebration: SacramentCelebration, reopen?: string) =>
+  Boolean(celebration.completedAt) && celebration.id !== reopen;
+
+/**
+ * As celebrações e quem vai a cada uma:
+ * - MANUAL: as turmas escolhidas (inteiras) e os catequizandos escolhidos;
+ * - AUTO: os candidatos aptos que não estão numa celebração manual do mesmo
+ *   sacramento, por média e presença. Com várias automáticas, repartem-se por
+ *   turma inteira, equilibrando o número de pessoas pela ordem das datas;
+ * - concluída: quem recebeu de facto (os restantes voltam a ser candidatos).
+ */
+export class SacramentCelebrations {
+  constructor(
+    readonly candidates: SacramentCandidates,
+    private readonly sacraments: SacramentRepository,
+  ) {}
+
+  /**
+   * `reopen`: uma celebração concluída tratada como marcada, com quem a
+   * recebeu de volta à lista (para corrigir quem recebeu).
+   */
+  async plan(
+    year: SacramentYear,
+    type: SacramentType,
+    saved?: SacramentCelebration[],
+    reopen?: string,
+  ): Promise<SacramentPlan> {
+    saved ??= await this.sacraments.listCelebrations(year.calendar.label);
+    const all = saved.filter((item) => item.type === type).sort(compareCelebrations);
+    const celebrations = all.filter((item) => !isCompleted(item, reopen));
+    const eligible = await this.candidates.eligiblePairs(year, type, reopen);
+    const candidatePairs = eligible.filter(
+      ({ enrollment }) => enrollment.level === CANDIDATE_LEVEL[type],
+    );
+    const manual = celebrations.filter((item) => celebrationMode(item.selection) === "MANUAL");
+    const chosenClasses = new Set(manual.flatMap((item) => item.selection.classIds));
+    const chosenPeople = new Set(manual.flatMap((item) => item.selection.catechumenIds));
+    // Só se avaliam os que podem entrar nalguma celebração.
+    const needed = eligible.filter(
+      (pair) =>
+        pair.enrollment.level === CANDIDATE_LEVEL[type] ||
+        chosenClasses.has(classOf(pair) ?? "") ||
+        chosenPeople.has(pair.catechumen.id.value),
+    );
+    const assessed = new Map(
+      (await this.candidates.assess(year, type, needed)).map((item) => [item.catechumenId, item]),
+    );
+
+    const participants = new Map<string, ParticipantView[]>();
+    const taken = new Set<string>();
+    for (const celebration of manual) {
+      const chosen = this.chosen(celebration.selection, needed, assessed);
+      chosen.forEach((item) => taken.add(item.catechumenId));
+      participants.set(celebration.id, chosen.sort(byName));
+    }
+
+    const candidates = candidatePairs.flatMap(
+      (pair) => assessed.get(pair.catechumen.id.value) ?? [],
+    );
+    const suggested = candidates
+      .filter((item) => item.eligible && !taken.has(item.catechumenId))
+      .sort(bySuggestion);
+    const auto = celebrations.filter((item) => celebrationMode(item.selection) === "AUTO");
+    const groups = new Map<string, ParticipantView[]>();
+    for (const item of suggested) {
+      // Pelo nome da turma (único no ano): o empate desfaz-se sempre igual.
+      const key = item.classLabel ?? "";
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+    const buckets = distributeGroups(
+      [...groups.entries()].map(([key, items]) => ({ key, items })),
+      auto.length,
+    );
+    auto.forEach((celebration, index) => {
+      participants.set(
+        celebration.id,
+        buckets[index]
+          .map((item) => ({ ...item, source: "SUGGESTED" as const }))
+          .sort(bySuggestion),
+      );
+    });
+
+    // Concluídas: quem tem o registo de cada uma.
+    const records = (await year.records()).filter((item) => item.type === type);
+    const received = new Map<string, number>();
+    for (const record of records) {
+      if (record.celebrationId) {
+        received.set(record.celebrationId, (received.get(record.celebrationId) ?? 0) + 1);
+      }
+    }
+    const completed = all.filter((item) => isCompleted(item, reopen));
+    if (completed.length) {
+      const pairs = await year.pairs();
+      const recipients = (celebration: SacramentCelebration) => {
+        const ids = new Set(
+          records
+            .filter((item) => item.celebrationId === celebration.id)
+            .map((r) => r.catechumenId),
+        );
+        return pairs.filter((pair) => ids.has(pair.catechumen.id.value));
+      };
+      const assessedRecipients = new Map(
+        (await this.candidates.assess(year, type, completed.flatMap(recipients))).map((item) => [
+          item.catechumenId,
+          item,
+        ]),
+      );
+      for (const celebration of completed) {
+        const classes = new Set(celebration.selection.classIds);
+        const people = new Set(celebration.selection.catechumenIds);
+        participants.set(
+          celebration.id,
+          recipients(celebration).flatMap((pair): ParticipantView[] => {
+            const item = assessedRecipients.get(pair.catechumen.id.value);
+            if (!item) return [];
+            const source: ParticipantSource = classes.has(classOf(pair) ?? "")
+              ? "CLASS"
+              : people.has(item.catechumenId)
+                ? "INDIVIDUAL"
+                : "SUGGESTED";
+            return [{ ...item, source }];
+          }),
+        );
+      }
+    }
+
+    return {
+      type,
+      celebrations: all,
+      participants,
+      received,
+      candidates: candidates.sort(byName),
+    };
+  }
+
+  /** Os escolhidos à mão: turmas inteiras e catequizandos um a um. */
+  private chosen(
+    selection: CelebrationSelection,
+    pairs: Pair[],
+    assessed: Map<string, ParticipantView>,
+  ): ParticipantView[] {
+    const classes = new Set(selection.classIds);
+    const people = new Set(selection.catechumenIds);
+    return pairs.flatMap((pair): ParticipantView[] => {
+      const item = assessed.get(pair.catechumen.id.value);
+      if (!item) return [];
+      if (classes.has(classOf(pair) ?? "")) return [{ ...item, source: "CLASS" }];
+      if (people.has(pair.catechumen.id.value)) return [{ ...item, source: "INDIVIDUAL" }];
+      return [];
+    });
+  }
+
+  toView(
+    celebration: SacramentCelebration,
+    participants: ParticipantView[],
+    receivedCount: number,
+  ): CelebrationView {
+    return {
+      id: celebration.id,
+      type: celebration.type,
+      date: celebration.date,
+      time: celebration.time ?? null,
+      place: celebration.place,
+      notes: celebration.notes ?? null,
+      mode: celebrationMode(celebration.selection),
+      selection: {
+        classIds: [...celebration.selection.classIds],
+        catechumenIds: [...celebration.selection.catechumenIds],
+      },
+      participants: participants.length,
+      ready: participants.filter((item) => item.ready).length,
+      status: celebration.completedAt ? "COMPLETED" : "SCHEDULED",
+      completedAt: celebration.completedAt?.toISOString() ?? null,
+      receivedCount,
+      createdAt: celebration.createdAt.toISOString(),
+      updatedAt: celebration.updatedAt.toISOString(),
+    };
+  }
+
+  /** A vista de uma celebração a partir do plano do seu sacramento. */
+  fromPlan(plan: SacramentPlan, celebration: SacramentCelebration): CelebrationView {
+    return this.toView(
+      celebration,
+      plan.participants.get(celebration.id) ?? [],
+      plan.received.get(celebration.id) ?? 0,
+    );
+  }
+
+  /** A celebração do ano em curso (ou erro). */
+  async find(id: string, year: SacramentYear): Promise<SacramentCelebration> {
+    const celebration = await this.sacraments.findCelebration(id);
+    if (!celebration || celebration.catecheticalYear !== year.calendar.label) {
+      throw new CelebrationNotFoundError();
+    }
+    return celebration;
+  }
+
+  /** A vista de uma celebração já gravada (com os participantes atuais). */
+  async view(year: SacramentYear, celebration: SacramentCelebration): Promise<CelebrationView> {
+    const plan = await this.plan(year, celebration.type);
+    return this.fromPlan(plan, celebration);
+  }
+}
+
+/** Celebrações do ano e, por sacramento, os candidatos e quantos já têm celebração. */
 export class GetSacramentsOverviewUseCase {
-  constructor(private readonly candidates: SacramentCandidates) {}
+  constructor(private readonly celebrations: SacramentCelebrations) {}
 
   async execute(): Promise<SacramentsOverviewView> {
-    const calendar = await this.candidates.calendar();
-    const [celebrations, lists, received] = await Promise.all([
-      this.candidates.celebrations(calendar),
-      Promise.all(SACRAMENT_TYPES.map((type) => this.candidates.list(type, calendar))),
-      this.candidates.received(calendar),
+    const candidates = this.celebrations.candidates;
+    const calendar = await candidates.calendar();
+    const year = await candidates.year(calendar);
+    const [plans, received] = await Promise.all([
+      Promise.all(SACRAMENT_TYPES.map((type) => this.celebrations.plan(year, type))),
+      candidates.received(calendar),
     ]);
+    const views = plans
+      .flatMap((plan) => plan.celebrations.map((celebration) => ({ celebration, plan })))
+      .sort((a, b) => compareCelebrations(a.celebration, b.celebration))
+      .map(({ celebration, plan }) => this.celebrations.fromPlan(plan, celebration));
     return {
       catecheticalYear: calendar.label,
-      celebrations: celebrations.map((celebration, index) => ({
-        ...celebration,
-        level: CANDIDATE_LEVEL[celebration.type],
-        candidates: lists[index].length,
-        ready: lists[index].filter((item) => item.ready).length,
-      })),
+      celebrations: views,
+      types: plans.map((plan) => {
+        const assigned = new Set(
+          [...plan.participants.values()].flat().map((item) => item.catechumenId),
+        );
+        const inSome = plan.candidates.filter((item) => assigned.has(item.catechumenId)).length;
+        return {
+          type: plan.type,
+          level: CANDIDATE_LEVEL[plan.type],
+          candidates: plan.candidates.length,
+          ready: plan.candidates.filter((item) => item.ready).length,
+          assigned: inSome,
+          unassigned: plan.candidates.length - inSome,
+        };
+      }),
       ...received,
     };
   }
 }
 
-/** Candidatos de uma celebração, com pesquisa e filtro pela preparação. */
+/** Candidatos de um sacramento, com pesquisa e filtro pela preparação. */
 export class ListSacramentCandidatesUseCase {
   constructor(private readonly candidates: SacramentCandidates) {}
 
   async execute(query: { type: SacramentType; search?: string; filter?: CandidateFilter }) {
     const all = await this.candidates.list(query.type);
-    const search = normalize(query.search?.trim() ?? "");
-    const filter = query.filter ?? "ALL";
     return {
-      items: all.filter(
-        (item) =>
-          (filter === "ALL" || item.ready === (filter === "READY")) &&
-          (!search || normalize(`${item.fullName} ${item.guardianName ?? ""}`).includes(search)),
-      ),
+      items: filterPeople(all, query),
       counts: {
         ALL: all.length,
         READY: all.filter((item) => item.ready).length,
@@ -282,6 +717,19 @@ export class ListSacramentCandidatesUseCase {
       } satisfies Record<CandidateFilter, number>,
     };
   }
+}
+
+function filterPeople<T extends { ready: boolean; fullName: string; guardianName?: string }>(
+  items: T[],
+  query: { search?: string; filter?: CandidateFilter },
+): T[] {
+  const search = normalize(query.search?.trim() ?? "");
+  const filter = query.filter ?? "ALL";
+  return items.filter(
+    (item) =>
+      (filter === "ALL" || item.ready === (filter === "READY")) &&
+      (!search || normalize(`${item.fullName} ${item.guardianName ?? ""}`).includes(search)),
+  );
 }
 
 /** A coordenação marca um requisito entregue (ou desmarca). */
@@ -328,44 +776,336 @@ export class SetSacramentRequirementUseCase {
   }
 }
 
-/** Data e local de uma celebração do ano; `null` volta aos por omissão. */
-export class SetCelebrationUseCase {
+export interface CelebrationInput {
+  date: string;
+  time?: string | null;
+  place: string;
+  notes?: string | null;
+  selection: CelebrationSelection;
+}
+
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** A hora, o local e as notas (o que uma celebração concluída ainda deixa mudar). */
+function cleanDetails(input: Pick<CelebrationInput, "time" | "place" | "notes">) {
+  const time = input.time?.trim() || undefined;
+  if (time && !TIME.test(time))
+    throw new InvalidCelebrationError("A hora escreve-se assim: 10:00.");
+  const place = input.place.trim();
+  if (place.length < 3 || place.length > 120) {
+    throw new InvalidCelebrationError("Indique o local (de 3 a 120 caracteres).");
+  }
+  const notes = input.notes?.trim() || undefined;
+  if (notes && notes.length > 500) {
+    throw new InvalidCelebrationError("As notas podem ter no máximo 500 caracteres.");
+  }
+  return { time, place, notes };
+}
+
+/** A mesma seleção (sem contar a ordem nem repetidos). */
+const sameSelection = (a: CelebrationSelection, b: CelebrationSelection) => {
+  const key = (selection: CelebrationSelection) =>
+    JSON.stringify([
+      [...new Set(selection.classIds)].sort(),
+      [...new Set(selection.catechumenIds)].sort(),
+    ]);
+  return key(a) === key(b);
+};
+
+/** Valida os dados e a seleção; devolve-os limpos. */
+async function cleanCelebration(
+  input: CelebrationInput,
+  type: SacramentType,
+  year: SacramentYear,
+): Promise<Omit<CelebrationInput, "time" | "notes"> & { time?: string; notes?: string }> {
+  const { calendar } = year;
+  const latest = addMonths(calendar.endsOn, MONTHS_AFTER_YEAR);
+  if (!isIsoDate(input.date) || input.date < calendar.startsOn || input.date > latest) {
+    throw new InvalidCelebrationError(
+      `A data tem de ser no ano catequético (de ${formatDate(calendar.startsOn)} a ${formatDate(latest)}).`,
+    );
+  }
+  const { time, place, notes } = cleanDetails(input);
+
+  const classIds = [...new Set(input.selection.classIds)].sort();
+  const catechumenIds = [...new Set(input.selection.catechumenIds)].sort();
+  const classes = new Set((await year.classes()).map((item) => item.id.value));
+  if (classIds.some((id) => !classes.has(id))) {
+    throw new InvalidCelebrationError("Há turmas escolhidas que não são do ano em curso.");
+  }
+  const pairs = new Map((await year.pairs()).map((pair) => [pair.catechumen.id.value, pair]));
+  if (catechumenIds.some((id) => !pairs.has(id))) {
+    throw new InvalidCelebrationError(
+      "Há catequizandos escolhidos sem matrícula aceite no ano em curso.",
+    );
+  }
+  const recorded = new Set(
+    (await year.records()).filter((item) => item.type === type).map((item) => item.catechumenId),
+  );
+  const received = catechumenIds.flatMap((id) =>
+    recorded.has(id) ? [pairs.get(id)!.catechumen.fullName] : [],
+  );
+  if (received.length) {
+    throw new InvalidCelebrationError(
+      `${received.join(", ")} já ${received.length === 1 ? "tem" : "têm"} ${THE_SACRAMENT[type]} registad${type === "FIRST_COMMUNION" ? "a" : "o"}.`,
+    );
+  }
+  return { date: input.date, time, place, notes, selection: { classIds, catechumenIds } };
+}
+
+/** Quem a seleção desta celebração já tem noutra celebração manual do mesmo sacramento. */
+async function conflictsOf(
+  service: SacramentCelebrations,
+  year: SacramentYear,
+  celebration: SacramentCelebration,
+  saved: SacramentCelebration[],
+): Promise<ParticipantConflict[]> {
+  if (celebrationMode(celebration.selection) === "AUTO") return [];
+  const others = saved.filter((item) => item.id !== celebration.id);
+  const plan = await service.plan(year, celebration.type, [...others, celebration]);
+  const mine = plan.participants.get(celebration.id) ?? [];
+  const conflicts: ParticipantConflict[] = [];
+  for (const other of plan.celebrations) {
+    if (
+      other.id === celebration.id ||
+      other.completedAt ||
+      celebrationMode(other.selection) === "AUTO"
+    )
+      continue;
+    const theirs = new Set(
+      (plan.participants.get(other.id) ?? []).map((item) => item.catechumenId),
+    );
+    for (const person of mine) {
+      if (
+        theirs.has(person.catechumenId) &&
+        !conflicts.some((c) => c.catechumenId === person.catechumenId)
+      ) {
+        conflicts.push({
+          catechumenId: person.catechumenId,
+          fullName: person.fullName,
+          celebrationId: other.id,
+          date: other.date,
+        });
+      }
+    }
+  }
+  return conflicts.sort(byName);
+}
+
+const OF_THE: Record<SacramentType, string> = {
+  BAPTISM: "do",
+  FIRST_COMMUNION: "da",
+  CONFIRMATION: "do",
+};
+
+const THE_SACRAMENT: Record<SacramentType, string> = {
+  BAPTISM: "o Batismo",
+  FIRST_COMMUNION: "a Primeira Comunhão",
+  CONFIRMATION: "o Crisma",
+};
+
+/** "da Primeira Comunhão de 30/05/2027 (Igreja Cristo Rei da Paz)" */
+const summaryOf = (celebration: Pick<SacramentCelebration, "type" | "date" | "place">) =>
+  `${OF_THE[celebration.type]} ${SACRAMENT_LABEL[celebration.type]} de ${formatDate(celebration.date)} (${celebration.place})`;
+
+/** Marca uma celebração nova (participantes escolhidos ou sugeridos). */
+export class CreateCelebrationUseCase {
   constructor(
-    private readonly candidates: SacramentCandidates,
+    private readonly celebrations: SacramentCelebrations,
     private readonly sacraments: SacramentRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
   ) {}
 
-  async execute(input: {
-    actorId: string;
-    type: SacramentType;
-    celebration: { date: string; place: string } | null;
-  }) {
-    const calendar = await this.candidates.calendar();
-    const label = SACRAMENT_LABEL[input.type];
-    if (input.celebration) {
-      const { date, place } = input.celebration;
-      // A celebração pode ser antes ou depois dos encontros da catequese.
-      await this.sacraments.saveCelebration({
-        catecheticalYear: calendar.label,
-        type: input.type,
-        date,
-        place: place.trim(),
-        updatedAt: this.clock.now(),
-        updatedBy: input.actorId,
-      });
-    } else {
-      await this.sacraments.deleteCelebration(calendar.label, input.type);
-    }
+  async execute(
+    input: CelebrationInput & { actorId: string; type: SacramentType },
+  ): Promise<CelebrationView> {
+    const year = await this.celebrations.candidates.year();
+    const clean = await cleanCelebration(input, input.type, year);
+    const now = this.clock.now();
+    const celebration: SacramentCelebration = {
+      id: UniqueId.create().value,
+      catecheticalYear: year.calendar.label,
+      type: input.type,
+      ...clean,
+      createdAt: now,
+      createdBy: input.actorId,
+      updatedAt: now,
+      updatedBy: input.actorId,
+    };
+    const saved = await this.sacraments.listCelebrations(year.calendar.label);
+    const conflicts = await conflictsOf(this.celebrations, year, celebration, saved);
+    if (conflicts.length) throw new ParticipantConflictError(conflicts);
+    await this.sacraments.saveCelebration(celebration);
     await this.activity.record({
       actorId: input.actorId,
       category: "SETTINGS",
-      action: "catechesis.sacrament_celebration_set",
-      summary: input.celebration
-        ? `Marcou ${label} para ${input.celebration.date.split("-").reverse().join("/")} (${input.celebration.place.trim()})`
-        : `Retirou a data da ${label}`,
+      action: "catechesis.sacrament_celebration_created",
+      summary: `Marcou a celebração ${summaryOf(celebration)}`,
     });
-    return (await this.candidates.celebrations(calendar)).find((item) => item.type === input.type)!;
+    return this.celebrations.view(year, celebration);
+  }
+}
+
+/** Altera uma celebração (o sacramento não muda). */
+export class UpdateCelebrationUseCase {
+  constructor(
+    private readonly celebrations: SacramentCelebrations,
+    private readonly sacraments: SacramentRepository,
+    private readonly activity: ActivityRecorder,
+    private readonly clock: Clock,
+  ) {}
+
+  async execute(
+    input: CelebrationInput & { actorId: string; id: string },
+  ): Promise<CelebrationView> {
+    const year = await this.celebrations.candidates.year();
+    const current = await this.celebrations.find(input.id, year);
+    if (current.completedAt) {
+      // Concluída: já não muda a data nem quem foi (só a hora, o local e as notas).
+      if (input.date !== current.date || !sameSelection(input.selection, current.selection)) {
+        throw new InvalidCelebrationError(
+          "Esta celebração já foi concluída: só pode alterar a hora, o local e as notas.",
+        );
+      }
+      const celebration: SacramentCelebration = {
+        ...current,
+        ...cleanDetails(input),
+        updatedAt: this.clock.now(),
+        updatedBy: input.actorId,
+      };
+      await this.sacraments.saveCelebration(celebration);
+      await this.activity.record({
+        actorId: input.actorId,
+        category: "SETTINGS",
+        action: "catechesis.sacrament_celebration_updated",
+        summary: `Alterou a celebração ${summaryOf(celebration)}`,
+      });
+      return this.celebrations.view(year, celebration);
+    }
+    const clean = await cleanCelebration(input, current.type, year);
+    const celebration: SacramentCelebration = {
+      ...current,
+      ...clean,
+      updatedAt: this.clock.now(),
+      updatedBy: input.actorId,
+    };
+    const saved = await this.sacraments.listCelebrations(year.calendar.label);
+    const conflicts = await conflictsOf(this.celebrations, year, celebration, saved);
+    if (conflicts.length) throw new ParticipantConflictError(conflicts);
+    await this.sacraments.saveCelebration(celebration);
+    await this.activity.record({
+      actorId: input.actorId,
+      category: "SETTINGS",
+      action: "catechesis.sacrament_celebration_updated",
+      summary: `Alterou a celebração ${summaryOf(celebration)}`,
+    });
+    return this.celebrations.view(year, celebration);
+  }
+}
+
+/** Apaga uma celebração (os participantes ficam sem celebração ou voltam às sugestões). */
+export class DeleteCelebrationUseCase {
+  constructor(
+    private readonly celebrations: SacramentCelebrations,
+    private readonly sacraments: SacramentRepository,
+    private readonly activity: ActivityRecorder,
+  ) {}
+
+  async execute(input: { actorId: string; id: string }): Promise<void> {
+    const year = await this.celebrations.candidates.year();
+    const celebration = await this.celebrations.find(input.id, year);
+    if (celebration.completedAt) {
+      throw new InvalidCelebrationError(
+        "Esta celebração já foi concluída e tem os sacramentos registados: não pode ser apagada.",
+      );
+    }
+    await this.sacraments.deleteCelebration(celebration.id);
+    await this.activity.record({
+      actorId: input.actorId,
+      category: "SETTINGS",
+      action: "catechesis.sacrament_celebration_deleted",
+      summary: `Apagou a celebração ${summaryOf(celebration)}`,
+    });
+  }
+}
+
+/** Participantes de uma celebração, com pesquisa e filtro pela preparação. */
+export class ListCelebrationParticipantsUseCase {
+  constructor(private readonly celebrations: SacramentCelebrations) {}
+
+  async execute(query: {
+    id: string;
+    search?: string;
+    filter?: CandidateFilter;
+  }): Promise<{ items: ParticipantView[] }> {
+    const year = await this.celebrations.candidates.year();
+    const celebration = await this.celebrations.find(query.id, year);
+    const plan = await this.celebrations.plan(year, celebration.type);
+    return { items: filterPeople(plan.participants.get(celebration.id) ?? [], query) };
+  }
+}
+
+/** Turmas do ano para escolher (as do nível que prepara o sacramento primeiro). */
+export class ListSelectableClassesUseCase {
+  constructor(private readonly celebrations: SacramentCelebrations) {}
+
+  async execute({ type }: { type: SacramentType }): Promise<{ items: SelectableClassView[] }> {
+    const candidates = this.celebrations.candidates;
+    const year = await candidates.year();
+    const [classes, pairs, plan] = await Promise.all([
+      year.classes(),
+      year.pairs(),
+      this.celebrations.plan(year, type),
+    ]);
+    const eligiblePairs = await candidates.eligiblePairs(year, type);
+    const assessed = await candidates.assess(
+      year,
+      type,
+      eligiblePairs.filter((pair) => classOf(pair) !== null),
+    );
+    const items = classes.map((klass): SelectableClassView => {
+      const id = klass.id.value;
+      // Uma concluída já não prende a turma (quem não recebeu pode ir a outra).
+      const taken = plan.celebrations.find(
+        (item) => !item.completedAt && item.selection.classIds.includes(id),
+      );
+      return {
+        id,
+        label: classShortLabel(klass),
+        level: klass.level,
+        members: pairs.filter((pair) => classOf(pair) === id).length,
+        eligible: assessed.filter((item) => item.classId === id && item.eligible).length,
+        isCandidateLevel: klass.level === CANDIDATE_LEVEL[type],
+        takenBy: taken ? { celebrationId: taken.id, date: taken.date } : null,
+      };
+    });
+    return {
+      items: items.sort(
+        (a, b) =>
+          Number(b.isCandidateLevel) - Number(a.isCandidateLevel) ||
+          LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level) ||
+          a.label.localeCompare(b.label, "pt"),
+      ),
+    };
+  }
+}
+
+/** Catequizandos de uma turma avaliados para um sacramento (para escolher alguns). */
+export class ListClassMembersForSacramentUseCase {
+  constructor(private readonly celebrations: SacramentCelebrations) {}
+
+  async execute(query: {
+    classId: string;
+    type: SacramentType;
+  }): Promise<{ items: ParticipantView[] }> {
+    const candidates = this.celebrations.candidates;
+    const year = await candidates.year();
+    const klass = (await year.classes()).find((item) => item.id.value === query.classId);
+    if (!klass) throw new ClassNotFoundError();
+    const members = (await candidates.eligiblePairs(year, query.type)).filter(
+      (pair) => classOf(pair) === query.classId,
+    );
+    return { items: await candidates.assess(year, query.type, members, "INDIVIDUAL") };
   }
 }

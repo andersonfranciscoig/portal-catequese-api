@@ -48,7 +48,13 @@ import {
   PlanClassesUseCase,
 } from "../../application/use-cases/coordination/class-generation.use-cases.js";
 import { GetOverviewUseCase } from "../../application/use-cases/coordination/overview.use-case.js";
+import { ListPendingRollsUseCase } from "../../application/use-cases/coordination/roll-reminders.use-cases.js";
+import { SetReceivedSacramentUseCase } from "../../application/use-cases/coordination/sacrament-records.use-cases.js";
+import { SACRAMENT_TYPES, type SacramentType } from "../../domain/sacraments.js";
 import {
+  receivedSacramentSchema,
+  sacramentTypeParam,
+  type ReceivedSacramentBody,
   catechistListSchema,
   catechistStatusSchema,
   catechumenListSchema,
@@ -88,6 +94,8 @@ export class CoordinationManagementController {
     private readonly setPresence: SetCatechistPresenceUseCase,
     private readonly listCatechumens: ListCatechumensUseCase,
     private readonly catechumenFile: GetCatechumenFileUseCase,
+    private readonly listPendingRolls: ListPendingRollsUseCase,
+    private readonly setReceivedSacrament: SetReceivedSacramentUseCase,
   ) {}
 
   @Get("overview")
@@ -193,6 +201,15 @@ export class CoordinationManagementController {
     return this.sessionDays.execute();
   }
 
+  // Antes de `attendance/:date` (senão "pending-rolls" seria lido como data).
+  @Get("attendance/pending-rolls")
+  @ApiOperation({
+    summary: "Encontros com o prazo da chamada passado e sem chamada (últimos 60 dias)",
+  })
+  pendingRolls() {
+    return this.listPendingRolls.execute();
+  }
+
   @Get("attendance/:date")
   @ApiOperation({ summary: "Turmas de um dia: chamada e presença do catequista" })
   @ApiParam({ name: "date", example: "2026-10-10" })
@@ -233,5 +250,26 @@ export class CoordinationManagementController {
   @ApiParam({ name: "id", format: "uuid" })
   catechumen(@Param("id", ParseUUIDPipe) id: string) {
     return this.catechumenFile.execute({ catechumenId: id });
+  }
+
+  @Put("catechumens/:id/sacraments/:type")
+  @ApiOperation({
+    summary: "Regista, corrige ou retira um sacramento recebido (data e paróquia)",
+  })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiParam({ name: "type", enum: SACRAMENT_TYPES })
+  @ApiZodBody(receivedSacramentSchema)
+  sacrament(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("type", new ZodValidationPipe(sacramentTypeParam)) type: SacramentType,
+    @Body(new ZodValidationPipe(receivedSacramentSchema)) body: ReceivedSacramentBody,
+  ) {
+    return this.setReceivedSacrament.execute({
+      ...body,
+      actorId: actor.accountId,
+      catechumenId: id,
+      type,
+    });
   }
 }

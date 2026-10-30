@@ -18,6 +18,8 @@ export abstract class DomainError extends Error {
   abstract readonly kind: DomainErrorKind;
   /** Código estável para os clientes (ex.: "identity.invalid_credentials"). */
   abstract readonly code: string;
+  /** Dados extra para o cliente (ex.: os conflitos de uma marcação), junto ao código. */
+  readonly details?: Record<string, unknown>;
 
   constructor(message: string) {
     super(message);

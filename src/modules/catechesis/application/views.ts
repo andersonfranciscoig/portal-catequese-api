@@ -18,6 +18,7 @@ import type {
 import type { CatechesisClass } from "../domain/catechesis-class.js";
 import type { Catechumen } from "../domain/catechumen.js";
 import type { AttendanceEntry, AttendanceTotals } from "../domain/class-attendance.js";
+import type { ReceivedSacramentView } from "./sacrament-records.js";
 import type { Enrollment } from "../domain/enrollment.js";
 import type { Grades } from "../domain/evaluation.js";
 
@@ -98,6 +99,8 @@ export interface CatechumenProfileView {
   gender: Gender;
   baptized: boolean;
   firstCommunion: boolean;
+  /** Os três sacramentos, sempre (recebidos ou não), com data e paróquia. */
+  sacraments: ReceivedSacramentView[];
   /** É o próprio (adulto) ou um educando. */
   self: boolean;
   enrollment: EnrollmentView;

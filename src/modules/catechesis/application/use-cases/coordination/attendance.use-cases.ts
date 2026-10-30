@@ -1,9 +1,13 @@
 import type { ActivityRecorder } from "../../../../../shared/application/activity-recorder.js";
+import type { CoordinationMessenger } from "../../../../../shared/application/coordination-messenger.js";
+import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { AttendanceStatus, SessionSlot } from "../../../domain/catechesis.js";
+import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import { luandaToday } from "../../../domain/dates.js";
+import { sessionDayLabel } from "../../../domain/roll-deadline.js";
 import {
   CalendarNotDefinedError,
   ClassNotFoundError,
@@ -16,7 +20,7 @@ import type {
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
-import { classLabel } from "../../messages.js";
+import { classLabel, classShortLabel } from "../../messages.js";
 import { toClassViews } from "../../views.js";
 import type { CoordinationClassView } from "./class.use-cases.js";
 
@@ -95,7 +99,36 @@ export class GetSessionUseCase {
   }
 }
 
-/** A coordenação regista se o catequista esteve no encontro. */
+/** O que o catequista principal lê quando a coordenação regista a sua presença. */
+export function catechistPresenceText(
+  status: AttendanceStatus,
+  date: string,
+  classLabel: string,
+): { title: string; body: string } {
+  const day = sessionDayLabel(date);
+  const session = `no encontro de ${day} (${classLabel})`;
+  switch (status) {
+    case "PRESENT":
+      return { title: `Presença registada: ${day}`, body: `Registei a tua presença ${session}.` };
+    case "ABSENT":
+      return {
+        title: `Falta registada: ${day}`,
+        body: `Registei uma falta tua ${session}. Se houver engano ou motivo, responde a esta mensagem.`,
+      };
+    case "JUSTIFIED":
+      return {
+        title: `Falta justificada: ${day}`,
+        body: `Registei a tua falta como justificada ${session}.`,
+      };
+  }
+}
+
+/**
+ * A coordenação regista se o catequista esteve no encontro. Quando o estado é
+ * novo ou mudou, o catequista principal recebe uma mensagem no chat (em nome
+ * de quem registou), uma notificação e um email. Gravar o mesmo estado outra
+ * vez não repete os avisos.
+ */
 export class SetCatechistPresenceUseCase {
   constructor(
     private readonly classes: ClassRepository,
@@ -103,6 +136,8 @@ export class SetCatechistPresenceUseCase {
     private readonly calendars: CalendarRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
+    private readonly messenger: CoordinationMessenger,
   ) {}
 
   async execute({
@@ -123,6 +158,9 @@ export class SetCatechistPresenceUseCase {
     if (!calendar?.isSessionDate(klass.slot, date) || date > luandaToday(now)) {
       throw new InvalidSessionDateError("Este dia não é um encontro já realizado desta turma.");
     }
+    const previous = (await this.presence.listForClasses([classId])).find(
+      (item) => item.date === date,
+    );
     await this.presence.save({ classId, date, status, recordedBy: actorId, recordedAt: now });
     await this.activity.record({
       actorId,
@@ -130,5 +168,39 @@ export class SetCatechistPresenceUseCase {
       action: "catechesis.catechist_presence",
       summary: `Registou a presença do catequista de ${classLabel(klass)} a ${date.split("-").reverse().join("/")}`,
     });
+    if (previous?.status !== status) await this.notifyLeads(actorId, klass, date, status);
+  }
+
+  /** Mensagem no chat (em nome de quem registou), notificação e email a cada principal. */
+  private async notifyLeads(
+    actorId: string,
+    klass: CatechesisClass,
+    date: string,
+    status: AttendanceStatus,
+  ) {
+    const { title, body } = catechistPresenceText(status, date, classShortLabel(klass));
+    const leads = klass.catechists
+      .filter((item) => item.role === "LEAD" && item.accountId !== actorId)
+      .map((item) => item.accountId);
+    for (const accountId of leads) {
+      let link = "/portal";
+      try {
+        const { conversationId } = await this.messenger.post({
+          toAccountId: accountId,
+          fromAccountId: actorId,
+          body,
+        });
+        link = `/portal/mensagens?c=${conversationId}`;
+      } catch {
+        // Sem chat, a notificação e o email chegam na mesma.
+      }
+      await this.notifier.notify({
+        to: { accountIds: [accountId] },
+        kind: "catechesis.catechist_presence",
+        title,
+        body,
+        link,
+      });
+    }
   }
 }

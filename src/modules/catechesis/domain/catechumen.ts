@@ -95,6 +95,18 @@ export class Catechumen extends AggregateRoot<CatechumenProps> {
     return this.props.guardianAccountId === accountId || this.props.accountId === accountId;
   }
 
+  /**
+   * Acompanha o registo de um sacramento (Batismo e Primeira Comunhão têm
+   * também o "sim/não" usado nos requisitos e na matrícula). A ordem e as
+   * datas são validadas com os registos, antes de chegar aqui.
+   */
+  setSacrament(type: "BAPTISM" | "FIRST_COMMUNION" | "CONFIRMATION", received: boolean, now: Date) {
+    if (type === "BAPTISM") this.props.baptized = received;
+    else if (type === "FIRST_COMMUNION") this.props.firstCommunion = received;
+    else return;
+    this.props.updatedAt = now;
+  }
+
   /** Dados atualizados numa nova matrícula (morada e sacramentos). */
   update(
     {

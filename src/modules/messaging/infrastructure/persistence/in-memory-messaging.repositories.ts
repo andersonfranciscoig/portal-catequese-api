@@ -83,11 +83,14 @@ export class InMemoryConversationRepository extends ConversationRepository {
     const counts = new Map<string, number>();
     for (const id of conversationIds) {
       const readAt = this.reads.get(`${id}:${accountId}`);
-      const count = this.messages
-        .forConversation(id)
-        .filter(
-          (message) => message.senderId !== accountId && (!readAt || message.createdAt > readAt),
-        ).length;
+      const subjectId = this.items.get(id)?.subjectAccountId;
+      const count = this.messages.forConversation(id).filter(
+        (message) =>
+          message.senderId !== accountId &&
+          // As automáticas só contam para a conta da conversa.
+          (!message.automated || subjectId === accountId) &&
+          (!readAt || message.createdAt > readAt),
+      ).length;
       if (count) counts.set(id, count);
     }
     return counts;

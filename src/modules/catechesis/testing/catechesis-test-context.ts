@@ -105,8 +105,17 @@ import {
   InMemoryEnrollmentDocumentRepository,
   InMemoryEnrollmentRepository,
   InMemoryEvaluationRepository,
+  InMemoryRollReminderRepository,
+  InMemorySacramentRecordRepository,
   InMemorySacramentRepository,
 } from "../infrastructure/persistence/in-memory/in-memory-catechesis.repositories.js";
+import { SacramentRecords } from "../application/sacrament-records.js";
+import {
+  CompleteCelebrationUseCase,
+  ListSacramentRecordsUseCase,
+  SacramentRecordsSummaryUseCase,
+  SetReceivedSacramentUseCase,
+} from "../application/use-cases/coordination/sacrament-records.use-cases.js";
 import { RecordingMailer } from "../../../shared/testing/recording-mailer.js";
 import {
   PaymentsLedger,
@@ -117,12 +126,25 @@ import {
   GetReportUseCase,
 } from "../application/use-cases/coordination/reports.use-cases.js";
 import {
+  CreateCelebrationUseCase,
+  DeleteCelebrationUseCase,
   GetSacramentsOverviewUseCase,
+  ListCelebrationParticipantsUseCase,
+  ListClassMembersForSacramentUseCase,
   ListSacramentCandidatesUseCase,
+  ListSelectableClassesUseCase,
   SacramentCandidates,
-  SetCelebrationUseCase,
+  SacramentCelebrations,
   SetSacramentRequirementUseCase,
+  UpdateCelebrationUseCase,
 } from "../application/use-cases/coordination/sacraments.use-cases.js";
+import {
+  ListMyPendingRollsUseCase,
+  ListPendingRollsUseCase,
+  PendingRolls,
+  SendRollRemindersUseCase,
+} from "../application/use-cases/coordination/roll-reminders.use-cases.js";
+import { RecordingMessenger } from "../../../shared/testing/recording-messenger.js";
 
 /** Pagamentos falsos (o módulo dos pagamentos não entra nos testes da catequese). */
 export class FakePaymentsLedger extends PaymentsLedger {
@@ -209,8 +231,12 @@ export function createCatechesisTestContext() {
   const activities = new InMemoryCalendarActivityRepository();
   const ledger = new FakePaymentsLedger();
   const mailer = new RecordingMailer();
+  const messenger = new RecordingMessenger();
+  const reminders = new InMemoryRollReminderRepository();
+  const recordRepository = new InMemorySacramentRecordRepository();
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
+  const sacramentRecords = new SacramentRecords(recordRepository, clock);
   let next = 0;
   const codes = new EnrollmentCodes(enrollments, () => 48_200 + next++);
   const access = new CatechesisAccess(people);
@@ -253,6 +279,10 @@ export function createCatechesisTestContext() {
 
   const ctx = {
     mailer,
+    messenger,
+    reminders,
+    recordRepository,
+    presence,
     ledger,
     sacramentRepository,
     events,
@@ -279,6 +309,7 @@ export function createCatechesisTestContext() {
       calendars,
       people,
       clock,
+      recordRepository,
     ),
     submit: new SubmitEnrollmentUseCase(
       catechumens,
@@ -290,6 +321,7 @@ export function createCatechesisTestContext() {
       clock,
       notifier,
       events,
+      sacramentRecords,
     ),
     myClass: new GetMyClassUseCase(resolver, attendance, people),
     roll: new GetRollUseCase(resolver, attendance),
@@ -373,7 +405,15 @@ export function createCatechesisTestContext() {
       people,
       clock,
     ),
-    setPresence: new SetCatechistPresenceUseCase(classes, presence, calendars, activity, clock),
+    setPresence: new SetCatechistPresenceUseCase(
+      classes,
+      presence,
+      calendars,
+      activity,
+      clock,
+      notifier,
+      messenger,
+    ),
     listCatechumens: new ListCatechumensUseCase(
       enrollments,
       catechumens,
@@ -389,7 +429,9 @@ export function createCatechesisTestContext() {
       evaluations,
       calendars,
       people,
+      recordRepository,
     ),
+    setReceivedSacrament: new SetReceivedSacramentUseCase(catechumens, sacramentRecords, activity),
     setCatechistStatus: new SetCatechistStatusUseCase(people, profiles, activity, clock),
     get catechists() {
       const directory = new CatechistDirectory(
@@ -412,12 +454,15 @@ export function createCatechesisTestContext() {
         catechumens,
         classes,
         attendance,
+        evaluations,
         documents,
         sacramentRepository,
         people,
+        recordRepository,
       );
+      const celebrations = new SacramentCelebrations(candidates, sacramentRepository);
       return {
-        overview: new GetSacramentsOverviewUseCase(candidates),
+        overview: new GetSacramentsOverviewUseCase(celebrations),
         candidates: new ListSacramentCandidatesUseCase(candidates),
         setRequirement: new SetSacramentRequirementUseCase(
           candidates,
@@ -426,7 +471,48 @@ export function createCatechesisTestContext() {
           activity,
           clock,
         ),
-        setCelebration: new SetCelebrationUseCase(candidates, sacramentRepository, activity, clock),
+        create: new CreateCelebrationUseCase(celebrations, sacramentRepository, activity, clock),
+        update: new UpdateCelebrationUseCase(celebrations, sacramentRepository, activity, clock),
+        remove: new DeleteCelebrationUseCase(celebrations, sacramentRepository, activity),
+        participants: new ListCelebrationParticipantsUseCase(celebrations),
+        classes: new ListSelectableClassesUseCase(celebrations),
+        members: new ListClassMembersForSacramentUseCase(celebrations),
+        complete: new CompleteCelebrationUseCase(
+          celebrations,
+          sacramentRepository,
+          recordRepository,
+          sacramentRecords,
+          catechumens,
+          activity,
+          clock,
+        ),
+        records: new ListSacramentRecordsUseCase(
+          recordRepository,
+          catechumens,
+          enrollments,
+          classes,
+          sacramentRepository,
+          people,
+        ),
+        summary: new SacramentRecordsSummaryUseCase(recordRepository),
+      };
+    },
+    get rolls() {
+      const pending = new PendingRolls(attendance, reminders, people);
+      return {
+        pending: new ListPendingRollsUseCase(calendars, classes, pending, clock),
+        mine: new ListMyPendingRollsUseCase(access, calendars, classes, pending, clock),
+        remind: new SendRollRemindersUseCase(
+          calendars,
+          classes,
+          pending,
+          reminders,
+          people,
+          notifier,
+          mailer,
+          messenger,
+          clock,
+        ),
       };
     },
     get calendarActivities() {

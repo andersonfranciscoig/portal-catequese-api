@@ -122,6 +122,8 @@ model Catechumen {
 
   enrollments     Enrollment[]
   sacramentChecks SacramentRequirementCheck[]
+  celebrations    SacramentCelebrationCatechumen[]
+  sacraments      SacramentRecord[]
 
   @@index([guardianAccountId])
   @@index([accountId])
@@ -185,6 +187,8 @@ model CatechesisClass {
   attendance          AttendanceRecord[]
   evaluations         Evaluation[]
   catechistAttendance CatechistAttendance[]
+  celebrations        SacramentCelebrationClass[]
+  rollReminders       RollReminder[]
 
   @@unique([catecheticalYear, level, section])
   @@map("classes")
@@ -318,18 +322,100 @@ enum SacramentRequirement {
   @@schema("catechesis")
 }
 
-/// Data e local de cada celebração do ano (definidos pela coordenação).
+/// Celebração de um sacramento no ano (pode haver várias do mesmo tipo), com o
+/// seu grupo de participantes. Sem turmas nem catequizandos escolhidos, os
+/// participantes são sugeridos pelo sistema (modo automático).
 model SacramentCelebration {
+  id               String        @id @db.Uuid
   catecheticalYear String        @map("catechetical_year")
   type             SacramentType
   /// YYYY-MM-DD
   date             String
+  /// "HH:mm"
+  time             String?
   place            String
+  notes            String?
+  createdAt        DateTime      @map("created_at") @db.Timestamptz(3)
+  createdBy        String?       @map("created_by") @db.Uuid
   updatedAt        DateTime      @map("updated_at") @db.Timestamptz(3)
   updatedBy        String?       @map("updated_by") @db.Uuid
+  /// Concluída: a coordenação registou quem recebeu de facto.
+  completedAt      DateTime?     @map("completed_at") @db.Timestamptz(3)
+  completedBy      String?       @map("completed_by") @db.Uuid
 
-  @@id([catecheticalYear, type])
+  classes     SacramentCelebrationClass[]
+  catechumens SacramentCelebrationCatechumen[]
+  records     SacramentRecord[]
+
+  @@index([catecheticalYear, type, date])
   @@map("sacrament_celebrations")
+  @@schema("catechesis")
+}
+
+/// Sacramento recebido por um catequizando (no máximo um por tipo). Os "sim/não"
+/// `baptized` e `firstCommunion` do catequizando acompanham sempre estes registos.
+model SacramentRecord {
+  id            String        @id @db.Uuid
+  catechumenId  String        @map("catechumen_id") @db.Uuid
+  type          SacramentType
+  /// YYYY-MM-DD (vazio = desconhecida, ex.: registos antigos)
+  date          String?
+  parish        String?
+  /// Celebração desta paróquia onde o recebeu.
+  celebrationId String?       @map("celebration_id") @db.Uuid
+  recordedAt    DateTime      @map("recorded_at") @db.Timestamptz(3)
+  recordedBy    String?       @map("recorded_by") @db.Uuid
+
+  catechumen  Catechumen            @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+  celebration SacramentCelebration? @relation(fields: [celebrationId], references: [id], onDelete: SetNull)
+
+  @@unique([catechumenId, type])
+  @@index([type, date])
+  @@index([celebrationId])
+  @@map("sacrament_records")
+  @@schema("catechesis")
+}
+
+/// Turma inteira escolhida para uma celebração.
+model SacramentCelebrationClass {
+  celebrationId String @map("celebration_id") @db.Uuid
+  classId       String @map("class_id") @db.Uuid
+
+  celebration SacramentCelebration @relation(fields: [celebrationId], references: [id], onDelete: Cascade)
+  klass       CatechesisClass      @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([celebrationId, classId])
+  @@index([classId])
+  @@map("sacrament_celebration_classes")
+  @@schema("catechesis")
+}
+
+/// Catequizando escolhido um a um para uma celebração.
+model SacramentCelebrationCatechumen {
+  celebrationId String @map("celebration_id") @db.Uuid
+  catechumenId  String @map("catechumen_id") @db.Uuid
+
+  celebration SacramentCelebration @relation(fields: [celebrationId], references: [id], onDelete: Cascade)
+  catechumen  Catechumen           @relation(fields: [catechumenId], references: [id], onDelete: Cascade)
+
+  @@id([celebrationId, catechumenId])
+  @@index([catechumenId])
+  @@map("sacrament_celebration_catechumens")
+  @@schema("catechesis")
+}
+
+/// Alerta de chamada por lançar já enviado (um por turma e encontro). Inserir
+/// só se não existir garante que, com várias instâncias, só uma avisa.
+model RollReminder {
+  classId   String   @map("class_id") @db.Uuid
+  /// YYYY-MM-DD (dia do encontro)
+  date      String
+  alertedAt DateTime @map("alerted_at") @db.Timestamptz(3)
+
+  klass CatechesisClass @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([classId, date])
+  @@map("roll_reminders")
   @@schema("catechesis")
 }
 

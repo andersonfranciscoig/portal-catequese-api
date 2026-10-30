@@ -66,9 +66,20 @@ import {
   EnrollmentDocumentRepository,
   EnrollmentRepository,
   EvaluationRepository,
+  RollReminderRepository,
+  SacramentRecordRepository,
   SacramentRepository,
 } from "./domain/repositories/catechesis.repositories.js";
+import { SacramentRecords } from "./application/sacrament-records.js";
 import {
+  CompleteCelebrationUseCase,
+  ListSacramentRecordsUseCase,
+  SacramentRecordsSummaryUseCase,
+  SetReceivedSacramentUseCase,
+} from "./application/use-cases/coordination/sacrament-records.use-cases.js";
+import {
+  PrismaRollReminderRepository,
+  PrismaSacramentRecordRepository,
   PrismaAnnouncementRepository,
   PrismaAttendanceRepository,
   PrismaCalendarRepository,
@@ -130,12 +141,26 @@ import {
   GetReportUseCase,
 } from "./application/use-cases/coordination/reports.use-cases.js";
 import {
+  CreateCelebrationUseCase,
+  DeleteCelebrationUseCase,
   GetSacramentsOverviewUseCase,
+  ListCelebrationParticipantsUseCase,
+  ListClassMembersForSacramentUseCase,
   ListSacramentCandidatesUseCase,
+  ListSelectableClassesUseCase,
   SacramentCandidates,
-  SetCelebrationUseCase,
+  SacramentCelebrations,
   SetSacramentRequirementUseCase,
+  UpdateCelebrationUseCase,
 } from "./application/use-cases/coordination/sacraments.use-cases.js";
+import {
+  ListMyPendingRollsUseCase,
+  ListPendingRollsUseCase,
+  PendingRolls,
+  SendRollRemindersUseCase,
+} from "./application/use-cases/coordination/roll-reminders.use-cases.js";
+import { RollRemindersScheduler } from "./infrastructure/jobs/roll-reminders.scheduler.js";
+import { CoordinationMessenger } from "../../shared/application/coordination-messenger.js";
 import { CoordinationAnnouncementsController } from "./presentation/http/coordination-announcements.controller.js";
 import { CoordinationCalendarActivitiesController } from "./presentation/http/coordination-calendar.controller.js";
 import { CoordinationReportsController } from "./presentation/http/coordination-reports.controller.js";
@@ -161,6 +186,8 @@ const PRESENCE = CatechistPresenceRepository;
 const SACRAMENTS = SacramentRepository;
 const ANNOUNCEMENTS = AnnouncementRepository;
 const ACTIVITIES = CalendarActivityRepository;
+const REMINDERS = RollReminderRepository;
+const RECORDS = SacramentRecordRepository;
 
 /**
  * Módulo da catequese: catequizandos, matrículas, turmas, presenças e avaliações.
@@ -196,6 +223,8 @@ const ACTIVITIES = CalendarActivityRepository;
     { provide: SACRAMENTS, useClass: PrismaSacramentRepository },
     { provide: ANNOUNCEMENTS, useClass: PrismaAnnouncementRepository },
     { provide: ACTIVITIES, useClass: PrismaCalendarActivityRepository },
+    { provide: REMINDERS, useClass: PrismaRollReminderRepository },
+    { provide: RECORDS, useClass: PrismaSacramentRecordRepository },
     RateLimitGuard,
     provideUseCase(CatechesisAccess, [PEOPLE]),
     provideUseCase(EnrollmentCodes, [ENROLLMENTS]),
@@ -217,6 +246,7 @@ const ACTIVITIES = CalendarActivityRepository;
       CALENDAR,
       PEOPLE,
       Clock,
+      RECORDS,
     ]),
     provideUseCase(SubmitEnrollmentUseCase, [
       CATECHUMENS,
@@ -228,6 +258,7 @@ const ACTIVITIES = CalendarActivityRepository;
       Clock,
       Notifier,
       EventBus,
+      SacramentRecords,
     ]),
     provideUseCase(UploadEnrollmentDocumentUseCase, [
       ENROLLMENTS,
@@ -329,7 +360,15 @@ const ACTIVITIES = CalendarActivityRepository;
       PEOPLE,
       Clock,
     ]),
-    provideUseCase(SetCatechistPresenceUseCase, [CLASSES, PRESENCE, CALENDAR, AUDIT, Clock]),
+    provideUseCase(SetCatechistPresenceUseCase, [
+      CLASSES,
+      PRESENCE,
+      CALENDAR,
+      AUDIT,
+      Clock,
+      Notifier,
+      CoordinationMessenger,
+    ]),
     provideUseCase(ListCatechumensUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, CALENDAR, PEOPLE]),
     provideUseCase(GetCatechumenFileUseCase, [
       CATECHUMENS,
@@ -339,6 +378,7 @@ const ACTIVITIES = CalendarActivityRepository;
       EVALUATIONS,
       CALENDAR,
       PEOPLE,
+      RECORDS,
     ]),
     provideUseCase(GetOverviewUseCase, [
       ENROLLMENTS,
@@ -383,11 +423,14 @@ const ACTIVITIES = CalendarActivityRepository;
       CATECHUMENS,
       CLASSES,
       ATTENDANCE,
+      EVALUATIONS,
       DOCUMENTS,
       SACRAMENTS,
       PEOPLE,
+      RECORDS,
     ]),
-    provideUseCase(GetSacramentsOverviewUseCase, [SacramentCandidates]),
+    provideUseCase(SacramentCelebrations, [SacramentCandidates, SACRAMENTS]),
+    provideUseCase(GetSacramentsOverviewUseCase, [SacramentCelebrations]),
     provideUseCase(ListSacramentCandidatesUseCase, [SacramentCandidates]),
     provideUseCase(SetSacramentRequirementUseCase, [
       SacramentCandidates,
@@ -396,7 +439,55 @@ const ACTIVITIES = CalendarActivityRepository;
       AUDIT,
       Clock,
     ]),
-    provideUseCase(SetCelebrationUseCase, [SacramentCandidates, SACRAMENTS, AUDIT, Clock]),
+    provideUseCase(CreateCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT, Clock]),
+    provideUseCase(UpdateCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT, Clock]),
+    provideUseCase(DeleteCelebrationUseCase, [SacramentCelebrations, SACRAMENTS, AUDIT]),
+    provideUseCase(ListCelebrationParticipantsUseCase, [SacramentCelebrations]),
+    provideUseCase(ListSelectableClassesUseCase, [SacramentCelebrations]),
+    provideUseCase(ListClassMembersForSacramentUseCase, [SacramentCelebrations]),
+    // Sacramentos recebidos e realizados
+    provideUseCase(SacramentRecords, [RECORDS, Clock]),
+    provideUseCase(SetReceivedSacramentUseCase, [CATECHUMENS, SacramentRecords, AUDIT]),
+    provideUseCase(CompleteCelebrationUseCase, [
+      SacramentCelebrations,
+      SACRAMENTS,
+      RECORDS,
+      SacramentRecords,
+      CATECHUMENS,
+      AUDIT,
+      Clock,
+    ]),
+    provideUseCase(ListSacramentRecordsUseCase, [
+      RECORDS,
+      CATECHUMENS,
+      ENROLLMENTS,
+      CLASSES,
+      SACRAMENTS,
+      PEOPLE,
+    ]),
+    provideUseCase(SacramentRecordsSummaryUseCase, [RECORDS]),
+    // Chamadas em atraso e alertas
+    provideUseCase(PendingRolls, [ATTENDANCE, REMINDERS, PEOPLE]),
+    provideUseCase(ListPendingRollsUseCase, [CALENDAR, CLASSES, PendingRolls, Clock]),
+    provideUseCase(ListMyPendingRollsUseCase, [
+      CatechesisAccess,
+      CALENDAR,
+      CLASSES,
+      PendingRolls,
+      Clock,
+    ]),
+    provideUseCase(SendRollRemindersUseCase, [
+      CALENDAR,
+      CLASSES,
+      PendingRolls,
+      REMINDERS,
+      PEOPLE,
+      Notifier,
+      Mailer,
+      CoordinationMessenger,
+      Clock,
+    ]),
+    RollRemindersScheduler,
     // Relatórios
     provideUseCase(GetReportUseCase, [
       CALENDAR,

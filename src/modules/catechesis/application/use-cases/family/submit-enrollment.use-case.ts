@@ -27,7 +27,9 @@ import type {
   CatechumenRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { cleanParish, mergeDeclared } from "../../../domain/sacrament-records.js";
 import type { CatechesisAccess } from "../../catechesis-access.js";
+import type { SacramentChange, SacramentRecords } from "../../sacrament-records.js";
 import type { EnrollmentCodes } from "../../enrollment-codes.js";
 import { toEnrollmentView, type EnrollmentView } from "../../views.js";
 
@@ -40,7 +42,15 @@ export interface SubmitEnrollmentInput {
     birthDate: string;
     gender: Gender;
     address?: string;
-    sacraments: { baptism: boolean; firstCommunion: boolean };
+    sacraments: {
+      baptism: boolean;
+      firstCommunion: boolean;
+      /** Opcionais: data (YYYY-MM-DD) e paróquia de cada sacramento já recebido. */
+      baptismDate?: string | null;
+      baptismParish?: string | null;
+      firstCommunionDate?: string | null;
+      firstCommunionParish?: string | null;
+    };
   };
   catechesis: {
     type: EnrollmentType;
@@ -75,6 +85,7 @@ export class SubmitEnrollmentUseCase {
     private readonly clock: Clock,
     private readonly notifier: Notifier,
     private readonly events: EventBus,
+    private readonly records: SacramentRecords,
   ) {}
 
   async execute({
@@ -151,7 +162,16 @@ export class SubmitEnrollmentUseCase {
       documentsInPerson,
       now,
     });
+    // Os sacramentos indicados passam a registos (sem apagar o que já se sabia);
+    // valida-se antes de gravar, grava-se depois do catequizando existir.
+    const sacramentRecords = await this.records.prepare(
+      catechumen,
+      await this.declaredSacraments(catechumen, data.sacraments),
+      accountId,
+    );
     await this.catechumens.save(catechumen);
+    // Só acrescenta registos: os "sim/não" já ficaram certos acima.
+    await sacramentRecords.commit();
     await this.enrollments.save(enrollment);
     await this.events.publish([new EnrollmentSubmitted(enrollment, catechumen)]);
     await this.activity.record({
@@ -169,5 +189,36 @@ export class SubmitEnrollmentUseCase {
       exceptAccountId: accountId,
     });
     return toEnrollmentView(enrollment, catechumen.fullName);
+  }
+
+  /** Batismo e Comunhão indicados: preenchem só a data e a paróquia que faltam. */
+  private async declaredSacraments(
+    catechumen: Catechumen,
+    sacraments: SubmitEnrollmentInput["catechumen"]["sacraments"],
+  ): Promise<SacramentChange[]> {
+    const current = await this.records.current(catechumen.id.value);
+    const declared = [
+      {
+        type: "BAPTISM" as const,
+        received: sacraments.baptism,
+        date: sacraments.baptismDate,
+        parish: sacraments.baptismParish,
+      },
+      {
+        type: "FIRST_COMMUNION" as const,
+        received: sacraments.firstCommunion,
+        date: sacraments.firstCommunionDate,
+        parish: sacraments.firstCommunionParish,
+      },
+    ];
+    return declared
+      .filter((item) => item.received)
+      .map((item) => ({
+        type: item.type,
+        facts: mergeDeclared(current[item.type], {
+          date: item.date || undefined,
+          parish: cleanParish(item.parish),
+        }),
+      }));
   }
 }

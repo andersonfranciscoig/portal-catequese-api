@@ -8,8 +8,8 @@ import type {
   MessageRepository,
 } from "../../domain/repositories/messaging.repositories.js";
 import type { ChatAccess } from "../chat-access.js";
-import { CONVERSATION_READ, MESSAGE_CREATED, messagePushes } from "../message-delivery.js";
-import { toMessageView, type MessageView } from "../views.js";
+import { CONVERSATION_READ, deliverMessage } from "../message-delivery.js";
+import { sendersOf, toMessageView, type MessageView } from "../views.js";
 
 export const DEFAULT_PAGE_SIZE = 30;
 export const MAX_PAGE_SIZE = 100;
@@ -39,7 +39,7 @@ export class ListMessagesUseCase {
     }
     const limit = Math.min(Math.max(input.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const page = await this.messages.page(conversation.id.value, { before, limit });
-    const people = await this.access.people(page.items.map((message) => message.senderId));
+    const people = await this.access.people(sendersOf(page.items));
     return {
       items: page.items.map((message) => toMessageView(message, viewer.id, people)),
       hasMore: page.hasMore,
@@ -80,26 +80,13 @@ export class SendMessageUseCase {
     // Quem escreve leu a conversa até aqui.
     await this.conversations.markRead(conversation.id.value, sender.id, message.createdAt);
 
-    const people = new Map([[sender.id, sender]]);
-    try {
-      const staffIds = conversation.kind === "COORDINATION" ? await this.access.staffIds() : [];
-      for (const accountId of conversation.audience(staffIds)) {
-        this.realtime.publish(accountId, {
-          type: MESSAGE_CREATED,
-          data: {
-            conversationId: conversation.id.value,
-            message: toMessageView(message, accountId, people),
-          },
-        });
-      }
-      for (const delivery of messagePushes(conversation, message, sender, staffIds)) {
-        // Sem esperar: o push é lento e nunca deve atrasar nem anular o envio.
-        void this.push.send(delivery.accountIds, delivery.payload).catch(() => undefined);
-      }
-    } catch {
-      // A mensagem já está gravada: quem não a recebeu agora vê-a ao abrir.
-    }
-    return toMessageView(message, sender.id, people);
+    await deliverMessage(
+      { access: this.access, realtime: this.realtime, push: this.push },
+      conversation,
+      message,
+      sender,
+    );
+    return toMessageView(message, sender.id, new Map([[sender.id, sender]]));
   }
 }
 

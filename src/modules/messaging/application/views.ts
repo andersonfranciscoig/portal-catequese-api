@@ -7,10 +7,14 @@ import {
 import type { Conversation } from "../domain/conversation.js";
 import type { Message } from "../domain/message.js";
 
+/** Nome do remetente das mensagens automáticas do portal. */
+export const PORTAL_SENDER_NAME = "Portal da Catequese";
+
+/** Uma conta numa conversa; `accountId` e `role` a `null` só nas mensagens automáticas. */
 export interface PersonRef {
-  accountId: string;
+  accountId: string | null;
   name: string;
-  role: ChatRole;
+  role: ChatRole | null;
 }
 
 export interface ContactView {
@@ -28,6 +32,8 @@ export interface MessageView {
   body: string;
   sentAt: string;
   mine: boolean;
+  /** Mensagem do sistema (remetente "Portal da Catequese"). */
+  automated: boolean;
 }
 
 export interface ConversationView {
@@ -36,13 +42,17 @@ export interface ConversationView {
   title: string;
   /** `null` quando quem vê é a conta da conversa com a coordenação (o outro lado é a equipa). */
   counterpart: PersonRef | null;
-  lastMessage: { body: string; sentAt: string; senderId: string } | null;
+  /** `senderId` a `null` quando a última mensagem é automática. */
+  lastMessage: { body: string; sentAt: string; senderId: string | null } | null;
   unreadCount: number;
   updatedAt: string;
 }
 
 /** Contas por id (as que já não existem aparecem como "Conta removida"). */
 export type People = Map<string, ChatPerson>;
+
+/** Remetente das mensagens automáticas. */
+export const PORTAL_SENDER: PersonRef = { accountId: null, name: PORTAL_SENDER_NAME, role: null };
 
 export function personRef(people: People, accountId: string): PersonRef {
   const person = people.get(accountId);
@@ -55,8 +65,13 @@ export function personRef(people: People, accountId: string): PersonRef {
 export function peopleIn(conversations: Conversation[]): string[] {
   return conversations.flatMap((conversation) => [
     ...conversation.memberIds,
-    ...(conversation.lastMessage ? [conversation.lastMessage.senderId] : []),
+    ...(conversation.lastMessage?.senderId ? [conversation.lastMessage.senderId] : []),
   ]);
+}
+
+/** Remetentes (com conta) destas mensagens. */
+export function sendersOf(messages: Message[]): string[] {
+  return messages.flatMap((message) => (message.senderId ? [message.senderId] : []));
 }
 
 export function toConversationView(
@@ -94,9 +109,10 @@ export function toMessageView(message: Message, viewerId: string, people: People
   return {
     id: message.id.value,
     conversationId: message.conversationId,
-    sender: personRef(people, message.senderId),
+    sender: message.senderId ? personRef(people, message.senderId) : PORTAL_SENDER,
     body: message.body,
     sentAt: message.createdAt.toISOString(),
-    mine: message.senderId === viewerId,
+    mine: message.senderId !== null && message.senderId === viewerId,
+    automated: message.automated,
   };
 }

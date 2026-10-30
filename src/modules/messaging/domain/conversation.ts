@@ -11,7 +11,8 @@ export type ConversationKind = "DIRECT" | "COORDINATION";
 export interface LastMessage {
   body: string;
   sentAt: Date;
-  senderId: string;
+  /** `null` numa mensagem automática do portal. */
+  senderId: string | null;
 }
 
 export interface ConversationProps {

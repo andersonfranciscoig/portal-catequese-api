@@ -11,7 +11,16 @@ beforeEach(async () => {
 });
 
 describe("Calendário do portal", () => {
-  it("mostra o Batismo e só as atividades da audiência", async () => {
+  it("mostra as celebrações marcadas e só as atividades da audiência", async () => {
+    // A Vigília Pascal já não é implícita: aparece porque a coordenação a marcou.
+    await ctx.sacraments.create.execute({
+      actorId: IDS.coordinator,
+      type: "BAPTISM",
+      date: easterVigil(2027),
+      time: "21:00",
+      place: "Igreja Cristo Rei da Paz",
+      selection: { classIds: [], catechumenIds: [] },
+    });
     await ctx.calendarActivities.save.execute({
       actorId: IDS.coordinator,
       title: "Reunião de pais",
@@ -49,6 +58,7 @@ describe("Calendário do portal", () => {
     expect(guardian.find((item) => item.title === "Batismo")).toMatchObject({
       kind: "SACRAMENT",
       startsAt: easterVigil(2027),
+      description: "21:00 · Igreja Cristo Rei da Paz",
     });
 
     const catechist = await ctx.calendarActivities.portal.execute({

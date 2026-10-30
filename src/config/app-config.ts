@@ -37,6 +37,11 @@ const schema = z
       .trim()
       .regex(/^(mailto:|https:\/\/)/, "Use mailto:… ou https://…")
       .default("mailto:catequese@cristoreidapaz.ao"),
+    /** Alertas de chamada por lançar (verificação de 15 em 15 minutos). */
+    ROLL_REMINDERS_ENABLED: z
+      .enum(["true", "false"], { message: "Use true ou false." })
+      .default("true")
+      .transform((value) => value === "true"),
   })
   .refine((env) => env.STORAGE_PROVIDER !== "uploadthing" || Boolean(env.UPLOADTHING_TOKEN), {
     path: ["UPLOADTHING_TOKEN"],
@@ -68,6 +73,8 @@ export class AppConfig {
   };
   /** Chaves VAPID do Web Push; `null` quando não estão definidas (push desligado). */
   readonly webPush: { publicKey: string; privateKey: string; subject: string } | null;
+  /** Alertas de chamada por lançar; nunca correm nos testes. */
+  readonly rollReminders: { enabled: boolean };
 
   constructor(source: Record<string, string | undefined> = process.env) {
     const parsed = schema.safeParse(source);
@@ -108,5 +115,6 @@ export class AppConfig {
             subject: env.VAPID_SUBJECT,
           }
         : null;
+    this.rollReminders = { enabled: env.ROLL_REMINDERS_ENABLED && env.NODE_ENV !== "test" };
   }
 }

@@ -14,6 +14,7 @@ import {
   GetRollUseCase,
   SaveRollUseCase,
 } from "../../application/use-cases/catechist/roll.use-cases.js";
+import { ListMyPendingRollsUseCase } from "../../application/use-cases/coordination/roll-reminders.use-cases.js";
 import {
   evaluationsSchema,
   rollSchema,
@@ -35,12 +36,19 @@ export class CatechistController {
     private readonly getEvaluations: GetEvaluationsUseCase,
     private readonly saveEvaluations: SaveEvaluationsUseCase,
     private readonly catechumen: GetClassCatechumenUseCase,
+    private readonly myPendingRolls: ListMyPendingRollsUseCase,
   ) {}
 
   @Get()
   @ApiOperation({ summary: "A turma, os catequizandos e os encontros já realizados" })
   get(@CurrentAccount() account: AccessTokenClaims) {
     return this.myClass.execute({ accountId: account.accountId });
+  }
+
+  @Get("pending-rolls")
+  @ApiOperation({ summary: "Encontros das minhas turmas com a chamada em atraso" })
+  pendingRolls(@CurrentAccount() account: AccessTokenClaims) {
+    return this.myPendingRolls.execute({ accountId: account.accountId });
   }
 
   @Get("attendance/:date")

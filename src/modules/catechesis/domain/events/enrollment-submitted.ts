@@ -13,6 +13,7 @@ export class EnrollmentSubmitted implements EnrollmentSubmittedEvent {
   readonly catechumenName: string;
   readonly purpose: "ENROLLMENT" | "CONFIRMATION";
   readonly payerAccountIds: string[];
+  readonly centerId: string;
   readonly occurredAt: Date;
 
   constructor(enrollment: Enrollment, catechumen: Catechumen) {
@@ -20,6 +21,7 @@ export class EnrollmentSubmitted implements EnrollmentSubmittedEvent {
     this.enrollmentCode = enrollment.code;
     this.catechumenName = catechumen.fullName;
     this.purpose = enrollment.type === "RENEWAL" ? "CONFIRMATION" : "ENROLLMENT";
+    this.centerId = enrollment.centerId;
     this.payerAccountIds = [
       ...new Set(
         [catechumen.guardianAccountId, catechumen.accountId, enrollment.submittedBy].filter(

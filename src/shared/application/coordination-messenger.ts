@@ -7,6 +7,8 @@ export interface CoordinationMessage {
    * mensagem é automática e aparece como "Portal da Catequese".
    */
   fromAccountId?: string;
+  /** Centro da conversa de coordenação. Sem ele, fica o Centro Sede. */
+  centerId?: string;
 }
 
 /**

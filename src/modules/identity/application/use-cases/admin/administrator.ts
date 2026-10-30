@@ -11,6 +11,7 @@ import type { AccountRepository } from "../../../domain/repositories/account.rep
 export const PERMISSION_LABEL: Record<Permission, string> = {
   SUPER_ADMIN: "Administração geral",
   COORDINATION: "Área da coordenação",
+  GENERAL_COORDINATION: "Coordenação da paróquia",
   FINANCE: "Menu financeiro",
   LATE_ENROLLMENT: "Inscrições fora do prazo",
   APPROVE_CATECHISTS: "Aprovar catequistas",

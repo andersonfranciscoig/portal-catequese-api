@@ -19,6 +19,7 @@ import type { CatechesisClass } from "../domain/catechesis-class.js";
 import type { Catechumen } from "../domain/catechumen.js";
 import type { AttendanceEntry, AttendanceTotals } from "../domain/class-attendance.js";
 import type { ReceivedSacramentView } from "./sacrament-records.js";
+import { centerRef } from "../domain/center.js";
 import type { Enrollment } from "../domain/enrollment.js";
 import type { Grades } from "../domain/evaluation.js";
 
@@ -48,6 +49,10 @@ export interface ClassView {
   startTime?: string;
   room: string;
   capacity: number;
+  center: { id: string; name: string };
+  kind: "REGULAR" | "SPECIAL";
+  sacrament?: "BAPTISM" | "FIRST_COMMUNION" | "CONFIRMATION";
+  audience?: "CHILD" | "ADULT";
   catechists: ClassCatechistView[];
   /** Próximo encontro (YYYY-MM-DD), se o ano ainda não acabou. */
   nextSessionDate?: string;
@@ -70,6 +75,7 @@ export interface EnrollmentView {
   reviewNote?: string;
   /** A família entrega os documentos em papel na secretaria. */
   documentsInPerson: boolean;
+  center: { id: string; name: string };
 }
 
 export interface CatechumenCardView {
@@ -176,6 +182,7 @@ export function toEnrollmentView(enrollment: Enrollment, catechumenName: string)
     classId: enrollment.classId,
     reviewNote: enrollment.reviewNote,
     documentsInPerson: enrollment.documentsInPerson,
+    center: centerRef(enrollment.centerId),
   };
 }
 
@@ -210,6 +217,10 @@ export async function toClassViews(
     startTime: klass.startTime,
     room: klass.room,
     capacity: klass.capacity,
+    center: centerRef(klass.centerId),
+    kind: klass.kind,
+    sacrament: klass.sacrament,
+    audience: klass.audience,
     // O principal primeiro.
     catechists: [...klass.catechists]
       .sort((a, b) => Number(b.role === "LEAD") - Number(a.role === "LEAD"))

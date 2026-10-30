@@ -16,6 +16,24 @@ export class MessageNotFoundError extends DomainError {
   }
 }
 
+export class CenterForbiddenError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "catechesis.center_forbidden";
+  constructor() {
+    super("Esta área é só do seu centro.");
+  }
+}
+
+export class StaffCenterRequiredError extends DomainError {
+  readonly kind = "forbidden";
+  readonly code = "identity.coordination_center_required";
+  constructor() {
+    super(
+      "A coordenação deste centro ainda não foi definida. Peça à administração para indicar o centro.",
+    );
+  }
+}
+
 export class ConversationNotAllowedError extends DomainError {
   readonly kind = "forbidden";
   readonly code = "messaging.not_allowed";

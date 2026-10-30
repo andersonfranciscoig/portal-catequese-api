@@ -1,4 +1,5 @@
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
+import { rememberCenterName, SEDE_CENTER_ID, type Center } from "../../../domain/center.js";
 import type { Announcement } from "../../../domain/announcement.js";
 import type { CalendarActivity } from "../../../domain/calendar-activity.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
@@ -18,6 +19,7 @@ import type {
 import {
   AttendanceRepository,
   CalendarRepository,
+  CenterRepository,
   CatechistPresenceRepository,
   CatechistProfileRepository,
   CatechumenRepository,
@@ -141,8 +143,14 @@ export class InMemoryClassRepository extends ClassRepository {
   async listForCatechist(accountId: string) {
     return [...this.items.values()].filter((item) => item.hasCatechist(accountId));
   }
-  async listYears() {
-    return [...new Set([...this.items.values()].map((item) => item.catecheticalYear))]
+  async listYears(centerId?: string) {
+    return [
+      ...new Set(
+        [...this.items.values()]
+          .filter((item) => !centerId || item.centerId === centerId)
+          .map((item) => item.catecheticalYear),
+      ),
+    ]
       .sort()
       .reverse();
   }
@@ -153,12 +161,20 @@ export class InMemoryClassRepository extends ClassRepository {
       ) ?? null
     );
   }
-  async exists(catecheticalYear: string, level: string, section: string) {
+  async exists(
+    catecheticalYear: string,
+    level: string,
+    section: string,
+    centerId = SEDE_CENTER_ID,
+    kind = "REGULAR",
+  ) {
     return [...this.items.values()].some(
       (item) =>
         item.catecheticalYear === catecheticalYear &&
         item.level === level &&
-        item.section === section,
+        item.section === section &&
+        item.centerId === centerId &&
+        item.kind === kind,
     );
   }
   async save(klass: CatechesisClass) {
@@ -330,6 +346,25 @@ export class InMemoryAnnouncementRepository extends AnnouncementRepository {
       const key = `${id}|${accountId}`;
       if (!this.reads.has(key)) this.reads.set(key, at);
     }
+  }
+}
+
+export class InMemoryCenterRepository extends CenterRepository {
+  readonly items = new Map<string, Center>();
+
+  async findById(id: string) {
+    return this.items.get(id) ?? null;
+  }
+
+  async list(status?: Center["status"]) {
+    return [...this.items.values()]
+      .filter((item) => !status || item.status === status)
+      .sort((a, b) => a.name.localeCompare(b.name, "pt"));
+  }
+
+  async save(center: Center) {
+    rememberCenterName(center.id.value, center.name);
+    this.items.set(center.id.value, center);
   }
 }
 

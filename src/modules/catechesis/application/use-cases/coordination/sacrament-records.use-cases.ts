@@ -3,6 +3,7 @@ import type { PeopleDirectory } from "../../../../../shared/application/people-d
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { Catechumen } from "../../../domain/catechumen.js";
+import { matchesCenter, assertSameCenter, type CenterScope } from "../../center-scope.js";
 import { luandaToday } from "../../../domain/dates.js";
 import {
   AlreadyReceivedError,
@@ -26,7 +27,7 @@ import {
   type SacramentFacts,
   type SacramentRecord,
 } from "../../../domain/sacrament-records.js";
-import { SACRAMENT_TYPES, type SacramentType } from "../../../domain/sacraments.js";
+import { CANDIDATE_LEVELS, SACRAMENT_TYPES, type SacramentType } from "../../../domain/sacraments.js";
 import { classShortLabel } from "../../messages.js";
 import {
   toReceivedView,
@@ -59,9 +60,11 @@ export class SetReceivedSacramentUseCase {
     /** Sem o campo, fica o que já estava; `null` apaga. */
     date?: string | null;
     parish?: string | null;
+    scope?: CenterScope;
   }): Promise<ReceivedSacramentView> {
     const catechumen = await this.catechumens.findById(UniqueId.from(input.catechumenId));
     if (!catechumen) throw new CatechumenNotFoundError();
+    assertSameCenter(input.scope, catechumen.centerId);
     const current = (await this.records.current(catechumen.id.value))[input.type];
     let facts: SacramentFacts | null = null;
     if (input.received) {
@@ -146,6 +149,15 @@ export class CompleteCelebrationUseCase {
 
     const mine = new Set(existing.map((item) => item.catechumenId));
     const toAdd = ids.filter((id) => !mine.has(id));
+    const levels = new Map(
+      (plan.participants.get(celebration.id) ?? []).map((item) => [item.catechumenId, item.level]),
+    );
+    const typesFor = (personId: string): SacramentType[] => {
+      if (type !== "BAPTISM" || !celebration.withCommunion) return [type];
+      const level = levels.get(personId);
+      if (level && CANDIDATE_LEVELS.FIRST_COMMUNION.includes(level)) return ["FIRST_COMMUNION"];
+      return ["BAPTISM", "FIRST_COMMUNION"];
+    };
     const toRemove = existing.filter((item) => !ids.includes(item.catechumenId));
     const people = new Map(
       (
@@ -154,8 +166,8 @@ export class CompleteCelebrationUseCase {
     );
 
     // Já tem o sacramento registado de outra origem (outra celebração, a matrícula…).
-    const others = (await this.recordsRepository.listForCatechumens(toAdd)).filter(
-      (item) => item.type === type,
+    const others = (await this.recordsRepository.listForCatechumens(toAdd)).filter((item) =>
+      typesFor(item.catechumenId).includes(item.type),
     );
     if (others.length) {
       throw new AlreadyReceivedError(
@@ -176,18 +188,29 @@ export class CompleteCelebrationUseCase {
       parish: PARISH_NAME,
       celebrationId: celebration.id,
     };
-    for (const [id, change] of [
-      ...toRemove.map((item) => [item.catechumenId, null] as const),
-      ...toAdd.map((id) => [id, facts] as const),
-    ]) {
+    const changesByPerson = new Map<string, { type: SacramentType; facts: SacramentFacts | null }[]>();
+    for (const item of toRemove) {
+      const list = changesByPerson.get(item.catechumenId) ?? [];
+      list.push({ type: item.type, facts: null });
+      changesByPerson.set(item.catechumenId, list);
+    }
+    for (const id of toAdd) {
+      changesByPerson.set(
+        id,
+        typesFor(id).map((recordType) => ({ type: recordType, facts })),
+      );
+    }
+    const sacramentOrder = (recordType: SacramentType) => SACRAMENT_TYPES.indexOf(recordType);
+
+    for (const [id, changes] of changesByPerson) {
+      const removing = changes.every((item) => item.facts === null);
+      const ordered = [...changes].sort(
+        (a, b) => (sacramentOrder(a.type) - sacramentOrder(b.type)) * (removing ? -1 : 1),
+      );
       const catechumen = people.get(id);
       if (!catechumen) continue;
       try {
-        const { commit } = await this.records.prepare(
-          catechumen,
-          [{ type, facts: change }],
-          input.actorId,
-        );
+        const { commit } = await this.records.prepare(catechumen, ordered, input.actorId);
         prepared.push({ catechumen, commit });
       } catch (error) {
         if (error instanceof InvalidSacramentRecordError) {
@@ -247,6 +270,7 @@ export interface SacramentRecordsQuery {
   search?: string;
   origin?: RecordOrigin;
   celebrationId?: string;
+  centerId?: string;
   page: number;
   pageSize: number;
 }
@@ -299,8 +323,9 @@ export class ListSacramentRecordsUseCase {
       })
       .filter(
         ({ catechumen }) =>
-          !search ||
-          normalize(`${catechumen.fullName} ${guardianOf(catechumen) ?? ""}`).includes(search),
+          matchesCenter(catechumen.centerId, query.centerId) &&
+          (!search ||
+            normalize(`${catechumen.fullName} ${guardianOf(catechumen) ?? ""}`).includes(search)),
       )
       .sort(
         (a, b) =>

@@ -5,6 +5,7 @@ import {
 import type { PushNotifier } from "../../../shared/application/push-notifier.js";
 import type { RealtimeBus } from "../../../shared/application/realtime-bus.js";
 import type { Clock } from "../../../shared/domain/clock.js";
+import { SEDE_CENTER_ID } from "../../../shared/domain/parish-centers.js";
 import { Conversation } from "../domain/conversation.js";
 import { ConversationNotAllowedError } from "../domain/errors.js";
 import { Message } from "../domain/message.js";
@@ -32,15 +33,16 @@ export class ChatCoordinationMessenger extends CoordinationMessenger {
     super();
   }
 
-  async post({ toAccountId, body, fromAccountId }: CoordinationMessage) {
+  async post({ toAccountId, body, fromAccountId, centerId }: CoordinationMessage) {
     const recipient = (await this.access.people([toAccountId])).get(toAccountId);
     if (!recipient?.active) throw new ConversationNotAllowedError();
     const sender = fromAccountId ? await this.access.viewer(fromAccountId) : null;
+    const center = centerId ?? SEDE_CENTER_ID;
 
     const now = this.clock.now();
     const conversation =
-      (await this.conversations.findCoordination(toAccountId)) ??
-      (await this.conversations.create(Conversation.coordination(toAccountId, now)));
+      (await this.conversations.findCoordination(toAccountId, center)) ??
+      (await this.conversations.create(Conversation.coordination(toAccountId, now, center)));
     const message = Message.create({
       conversationId: conversation.id.value,
       senderId: sender?.id ?? null,

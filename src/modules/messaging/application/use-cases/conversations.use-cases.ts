@@ -1,7 +1,15 @@
 import type { CatechesisRelations } from "../../../../shared/application/catechesis-relations.js";
 import type { ContactDirectory } from "../../../../shared/application/contact-directory.js";
 import type { Clock } from "../../../../shared/domain/clock.js";
-import { decideStart, isStaff, luandaToday, type ChatTarget } from "../../domain/chat-policy.js";
+import {
+  decideStart,
+  isStaff,
+  luandaToday,
+  staffCenterFilter,
+  type ChatTarget,
+} from "../../domain/chat-policy.js";
+import { SEDE_CENTER_ID } from "../../../../shared/domain/parish-centers.js";
+import { CenterForbiddenError } from "../../domain/errors.js";
 import { Conversation } from "../../domain/conversation.js";
 import { ConversationNotAllowedError } from "../../domain/errors.js";
 import type { ConversationRepository } from "../../domain/repositories/messaging.repositories.js";
@@ -10,6 +18,18 @@ import { peopleIn, toConversationView, type ConversationView } from "../views.js
 
 /** Máximo de conversas na lista (as mais recentes). */
 const LIST_LIMIT = 200;
+
+function coordinationCenter(
+  viewer: Parameters<typeof staffCenterFilter>[0],
+  requested?: string,
+): string {
+  const own = staffCenterFilter(viewer);
+  if (own) {
+    if (requested && requested !== own) throw new CenterForbiddenError();
+    return own;
+  }
+  return requested ?? SEDE_CENTER_ID;
+}
 
 /** Conversas de quem pede, mais recentes primeiro (a equipa vê todas as da coordenação). */
 export class ListConversationsUseCase {
@@ -20,7 +40,12 @@ export class ListConversationsUseCase {
 
   async execute(input: { accountId: string }): Promise<{ items: ConversationView[] }> {
     const viewer = await this.access.viewer(input.accountId);
-    const found = await this.conversations.listVisibleTo(viewer.id, isStaff(viewer), LIST_LIMIT);
+    const found = await this.conversations.listVisibleTo(
+      viewer.id,
+      isStaff(viewer),
+      LIST_LIMIT,
+      staffCenterFilter(viewer),
+    );
     const ids = found.map((conversation) => conversation.id.value);
     const [unread, people] = await Promise.all([
       this.conversations.unreadCounts(viewer.id, ids),
@@ -43,7 +68,12 @@ export class CountUnreadConversationsUseCase {
 
   async execute(input: { accountId: string }): Promise<{ count: number }> {
     const viewer = await this.access.viewer(input.accountId);
-    const found = await this.conversations.listVisibleTo(viewer.id, isStaff(viewer), LIST_LIMIT);
+    const found = await this.conversations.listVisibleTo(
+      viewer.id,
+      isStaff(viewer),
+      LIST_LIMIT,
+      staffCenterFilter(viewer),
+    );
     const unread = await this.conversations.unreadCounts(
       viewer.id,
       found.map((conversation) => conversation.id.value),
@@ -52,7 +82,9 @@ export class CountUnreadConversationsUseCase {
   }
 }
 
-export type StartRecipient = { kind: "coordination" } | { kind: "account"; accountId: string };
+export type StartRecipient =
+  | { kind: "coordination"; centerId?: string }
+  | { kind: "account"; accountId: string };
 
 /**
  * Abre (ou reabre) uma conversa, se a matriz de permissões o permitir.
@@ -70,6 +102,7 @@ export class StartConversationUseCase {
   async execute(input: {
     accountId: string;
     recipient: StartRecipient;
+    centerId?: string;
   }): Promise<ConversationView> {
     const viewer = await this.access.viewer(input.accountId);
     let target: ChatTarget;
@@ -89,14 +122,18 @@ export class StartConversationUseCase {
     if (!decision.allowed) throw new ConversationNotAllowedError();
 
     const now = this.clock.now();
+    const centerId =
+      decision.kind === "COORDINATION" ? coordinationCenter(viewer, input.centerId) : undefined;
     const conversation =
       decision.kind === "DIRECT"
         ? ((await this.conversations.findDirect(
             Conversation.directKeyFor(viewer.id, decision.otherId),
           )) ??
           (await this.conversations.create(Conversation.direct(viewer.id, decision.otherId, now))))
-        : ((await this.conversations.findCoordination(decision.subjectId)) ??
-          (await this.conversations.create(Conversation.coordination(decision.subjectId, now))));
+        : ((await this.conversations.findCoordination(decision.subjectId, centerId)) ??
+          (await this.conversations.create(
+            Conversation.coordination(decision.subjectId, now, centerId),
+          )));
 
     const id = conversation.id.value;
     const [unread, people] = await Promise.all([

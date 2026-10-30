@@ -7,6 +7,7 @@ export const paymentListSchema = z.object({
   method: z.enum(["EXPRESS_REFERENCE", "BANK_TRANSFER", "CASH"]).optional(),
   purpose: z.enum(["ENROLLMENT", "CONFIRMATION"]).optional(),
   search: z.string().max(100).optional(),
+  centerId: z.uuid().optional(),
 });
 export type PaymentListQuery = z.infer<typeof paymentListSchema>;
 

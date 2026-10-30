@@ -17,6 +17,7 @@ export type ManualCatechistStatus = Exclude<CatechistStatus, "ACTIVE" | "AVAILAB
 export interface CatechistProfile {
   accountId: string;
   status?: ManualCatechistStatus;
+  centerId: string;
   updatedAt: Date;
   updatedBy?: string;
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { SEDE_CENTER_ID } from "../../../shared/domain/parish-centers.js";
 import { NotAnApprovedCatechistError } from "../domain/errors/catechesis.errors.js";
 import { isWithinReminderWindow, rollDeadline, sessionDayLabel } from "../domain/roll-deadline.js";
 import { createCatechesisTestContext, IDS } from "../testing/catechesis-test-context.js";
@@ -64,6 +65,7 @@ describe("Prazo da chamada", () => {
     expect(items).toEqual([
       {
         classId,
+        centerId: SEDE_CENTER_ID,
         classLabel: "Comunhão · 1.º ano · A",
         date: "2026-10-10",
         deadline: "2026-10-10T22:59:59.000Z",
@@ -124,8 +126,8 @@ describe("Alertas de chamada por lançar", () => {
     ]);
     // Mensagem automática (sem remetente) na conversa de coordenação de cada um.
     expect(ctx.messenger.messages).toEqual([
-      { toAccountId: IDS.catechist, body: text },
-      { toAccountId: IDS.both, body: text },
+      { toAccountId: IDS.catechist, body: text, centerId: SEDE_CENTER_ID },
+      { toAccountId: IDS.both, body: text, centerId: SEDE_CENTER_ID },
     ]);
     // Email próprio só a quem tem email.
     expect(ctx.mailer.rollReminders).toEqual([
@@ -219,6 +221,7 @@ describe("Presença do catequista registada pela coordenação", () => {
       {
         toAccountId: IDS.catechist,
         fromAccountId: IDS.coordinator,
+        centerId: SEDE_CENTER_ID,
         body: "Registei a tua presença no encontro de sábado, 10/10 (Comunhão · 1.º ano · A).",
       },
     ]);

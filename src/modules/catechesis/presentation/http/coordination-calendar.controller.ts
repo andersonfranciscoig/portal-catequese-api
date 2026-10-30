@@ -28,6 +28,7 @@ import {
   ListCalendarActivitiesUseCase,
   SaveCalendarActivityUseCase,
 } from "../../application/use-cases/coordination/calendar-activities.use-cases.js";
+import { scopeOf } from "./http-center.js";
 import { calendarActivitySchema, type CalendarActivityBody } from "./catechesis.schemas.js";
 
 /** Coordenação: atividades do calendário, além das datas dos sacramentos. */
@@ -57,7 +58,7 @@ export class CoordinationCalendarActivitiesController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(calendarActivitySchema)) body: CalendarActivityBody,
   ) {
-    return this.save.execute({ actorId: actor.accountId, ...body });
+    return this.save.execute({ actorId: actor.accountId, ...body, scope: scopeOf(actor) });
   }
 
   @Put(":id")
@@ -68,13 +69,13 @@ export class CoordinationCalendarActivitiesController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(calendarActivitySchema)) body: CalendarActivityBody,
   ) {
-    return this.save.execute({ actorId: actor.accountId, id, ...body });
+    return this.save.execute({ actorId: actor.accountId, id, ...body, scope: scopeOf(actor) });
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Retira uma atividade do calendário" })
   removeOne(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
-    return this.remove.execute({ actorId: actor.accountId, id });
+    return this.remove.execute({ actorId: actor.accountId, id, scope: scopeOf(actor) });
   }
 }

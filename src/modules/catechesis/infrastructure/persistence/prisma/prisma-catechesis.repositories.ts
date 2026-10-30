@@ -10,6 +10,7 @@ import type {
   Prisma,
 } from "../../../../../shared/infrastructure/database/generated/client.js";
 import { PrismaService } from "../../../../../shared/infrastructure/database/prisma.service.js";
+import { SEDE_CENTER_ID } from "../../../domain/center.js";
 import { Announcement, type AnnouncementAudience } from "../../../domain/announcement.js";
 import { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import { CatechesisClass } from "../../../domain/catechesis-class.js";
@@ -115,6 +116,7 @@ function toCatechumen(row: CatechumenRow) {
       guardianAccountId: orUndefined(row.guardianAccountId),
       guardianRelationship: orUndefined(row.guardianRelationship),
       accountId: orUndefined(row.accountId),
+      centerId: row.centerId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     },
@@ -159,6 +161,7 @@ export class PrismaCatechumenRepository extends CatechumenRepository {
       guardianAccountId: catechumen.guardianAccountId ?? null,
       guardianRelationship: catechumen.guardianRelationship ?? null,
       accountId: catechumen.accountId ?? null,
+      centerId: catechumen.centerId,
       updatedAt: catechumen.updatedAt,
     };
     await this.prisma.catechumen.upsert({
@@ -173,6 +176,7 @@ function toEnrollment(row: EnrollmentRow) {
   return Enrollment.restore(
     {
       code: row.code,
+      centerId: row.centerId,
       catechumenId: row.catechumenId,
       catecheticalYear: row.catecheticalYear,
       level: row.level,
@@ -283,6 +287,7 @@ export class PrismaEnrollmentRepository extends EnrollmentRepository {
   async save(enrollment: Enrollment) {
     const data = {
       status: enrollment.status,
+      centerId: enrollment.centerId,
       level: enrollment.level,
       type: enrollment.type,
       preferredSlot: enrollment.preferredSlot,
@@ -323,6 +328,10 @@ function toClass(row: ClassRow & { catechists: ClassCatechistRow[] }) {
       startTime: orUndefined(row.startTime),
       room: row.room,
       capacity: row.capacity,
+      centerId: row.centerId,
+      kind: row.kind,
+      sacrament: row.sacrament ?? undefined,
+      audience: row.audience ?? undefined,
       catechists: row.catechists.map((item) => ({ accountId: item.accountId, role: item.role })),
       createdAt: row.createdAt,
     },
@@ -374,8 +383,9 @@ export class PrismaClassRepository extends ClassRepository {
     return rows.map(toClass);
   }
 
-  async listYears() {
+  async listYears(centerId?: string) {
     const rows = await this.prisma.catechesisClass.findMany({
+      where: centerId ? { centerId } : undefined,
       distinct: ["catecheticalYear"],
       select: { catecheticalYear: true },
       orderBy: { catecheticalYear: "desc" },
@@ -392,9 +402,21 @@ export class PrismaClassRepository extends ClassRepository {
     return row ? toClass(row) : null;
   }
 
-  async exists(catecheticalYear: string, level: string, section: string) {
+  async exists(
+    catecheticalYear: string,
+    level: string,
+    section: string,
+    centerId = SEDE_CENTER_ID,
+    kind = "REGULAR",
+  ) {
     const count = await this.prisma.catechesisClass.count({
-      where: { catecheticalYear, level: level as ClassRow["level"], section },
+      where: {
+        catecheticalYear,
+        level: level as ClassRow["level"],
+        section,
+        centerId,
+        kind: kind as ClassRow["kind"],
+      },
     });
     return count > 0;
   }
@@ -407,6 +429,10 @@ export class PrismaClassRepository extends ClassRepository {
       startTime: klass.startTime ?? null,
       room: klass.room,
       capacity: klass.capacity,
+      centerId: klass.centerId,
+      kind: klass.kind,
+      sacrament: klass.sacrament ?? null,
+      audience: klass.audience ?? null,
     };
     // A turma e os catequistas mudam juntos (ou nada muda).
     await this.prisma.$transaction([
@@ -633,6 +659,7 @@ export class PrismaCatechistProfileRepository extends CatechistProfileRepository
   async save(profile: CatechistProfile) {
     const data = {
       status: profile.status ?? null,
+      centerId: profile.centerId,
       updatedAt: profile.updatedAt,
       updatedBy: profile.updatedBy ?? null,
     };
@@ -647,12 +674,14 @@ export class PrismaCatechistProfileRepository extends CatechistProfileRepository
 function toProfile(row: {
   accountId: string;
   status: CatechistProfile["status"] | null;
+  centerId: string;
   updatedAt: Date;
   updatedBy: string | null;
 }): CatechistProfile {
   return {
     accountId: row.accountId,
     status: orUndefined(row.status),
+    centerId: row.centerId,
     updatedAt: row.updatedAt,
     updatedBy: orUndefined(row.updatedBy),
   };
@@ -701,6 +730,8 @@ function toCelebration(row: {
   time: string | null;
   place: string;
   notes: string | null;
+  centerId: string;
+  withCommunion: boolean;
   createdAt: Date;
   createdBy: string | null;
   updatedAt: Date;
@@ -718,6 +749,8 @@ function toCelebration(row: {
     time: orUndefined(row.time),
     place: row.place,
     notes: orUndefined(row.notes),
+    centerId: row.centerId,
+    withCommunion: row.withCommunion,
     selection: {
       classIds: row.classes.map((item) => item.classId).sort(),
       catechumenIds: row.catechumens.map((item) => item.catechumenId).sort(),
@@ -850,6 +883,8 @@ export class PrismaSacramentRepository extends SacramentRepository {
       time: celebration.time ?? null,
       place: celebration.place,
       notes: celebration.notes ?? null,
+      centerId: celebration.centerId,
+      withCommunion: celebration.withCommunion === true,
       updatedAt: celebration.updatedAt,
       updatedBy: celebration.updatedBy ?? null,
       completedAt: celebration.completedAt ?? null,
@@ -929,6 +964,7 @@ function toAnnouncement(row: {
   publishedAt: Date;
   updatedAt: Date;
   createdBy: string;
+  centerId: string;
 }) {
   return Announcement.restore(
     {
@@ -940,6 +976,7 @@ function toAnnouncement(row: {
       publishedAt: row.publishedAt,
       updatedAt: row.updatedAt,
       createdBy: row.createdBy,
+      centerId: row.centerId,
     },
     UniqueId.from(row.id),
   );
@@ -972,6 +1009,7 @@ export class PrismaAnnouncementRepository extends AnnouncementRepository {
       publishedAt: announcement.publishedAt,
       updatedAt: announcement.updatedAt,
       createdBy: announcement.createdBy,
+      centerId: announcement.centerId,
     };
     await this.prisma.announcement.upsert({
       where: { id: announcement.id.value },

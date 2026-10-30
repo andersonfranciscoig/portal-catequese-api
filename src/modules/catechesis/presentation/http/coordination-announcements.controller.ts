@@ -38,6 +38,7 @@ import {
   type PinAnnouncementBody,
   type PublishAnnouncementBody,
 } from "./catechesis.schemas.js";
+import { listedCenter, scopeOf } from "./http-center.js";
 
 /** Coordenação: avisos do portal (Comunicação) e o sino de quem os recebe. */
 @ApiTags("Coordenação — comunicação")
@@ -56,8 +57,14 @@ export class CoordinationAnnouncementsController {
   @Get()
   @ApiOperation({ summary: "Avisos publicados, com destinatários e leituras" })
   @ApiZodQuery(announcementListSchema)
-  list(@Query(new ZodValidationPipe(announcementListSchema)) query: AnnouncementListQuery) {
-    return this.listAnnouncements.execute(query);
+  list(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(announcementListSchema)) query: AnnouncementListQuery,
+  ) {
+    return this.listAnnouncements.execute({
+      ...query,
+      centerId: listedCenter(scopeOf(actor), query.centerId),
+    });
   }
 
   @Post()
@@ -68,7 +75,7 @@ export class CoordinationAnnouncementsController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(publishAnnouncementSchema)) body: PublishAnnouncementBody,
   ) {
-    return this.publish.execute({ actorId: actor.accountId, ...body });
+    return this.publish.execute({ actorId: actor.accountId, ...body, scope: scopeOf(actor) });
   }
 
   @Patch(":id")
@@ -79,13 +86,18 @@ export class CoordinationAnnouncementsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(pinAnnouncementSchema)) body: PinAnnouncementBody,
   ) {
-    return this.pin.execute({ actorId: actor.accountId, id, pinned: body.pinned });
+    return this.pin.execute({
+      actorId: actor.accountId,
+      id,
+      pinned: body.pinned,
+      scope: scopeOf(actor),
+    });
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: "Apaga um aviso" })
   removeOne(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
-    return this.remove.execute({ actorId: actor.accountId, id });
+    return this.remove.execute({ actorId: actor.accountId, id, scope: scopeOf(actor) });
   }
 }

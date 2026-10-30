@@ -37,6 +37,7 @@ const startSchema = z.object({
     z.object({ kind: z.literal("coordination") }),
     z.object({ kind: z.literal("account"), accountId: z.uuid() }),
   ]),
+  centerId: z.uuid().optional(),
 });
 
 const messagesSchema = z.object({
@@ -94,7 +95,11 @@ export class ConversationsController {
     @CurrentAccount() account: AccessTokenClaims,
     @Body(new ZodValidationPipe(startSchema)) body: z.infer<typeof startSchema>,
   ) {
-    return this.start.execute({ accountId: account.accountId, recipient: body.recipient });
+    return this.start.execute({
+      accountId: account.accountId,
+      recipient: body.recipient,
+      centerId: body.centerId,
+    });
   }
 
   @Get(":id/messages")

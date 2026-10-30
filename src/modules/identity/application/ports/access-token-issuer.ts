@@ -4,6 +4,8 @@ export interface AccessTokenClaims {
   accountId: string;
   roles: AccountRole[];
   permissions: Permission[];
+  /** Centro da coordenação, quando a conta só vê um centro. */
+  coordinationCenterId?: string | null;
 }
 
 export interface IssuedAccessToken {

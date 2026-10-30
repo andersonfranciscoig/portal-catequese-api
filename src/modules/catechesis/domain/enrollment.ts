@@ -6,6 +6,7 @@ import {
   type CatechesisLevel,
   type SessionSlot,
 } from "./catechesis.js";
+import { SEDE_CENTER_ID } from "./center.js";
 import {
   EnrollmentAlreadyDecidedError,
   InvalidEnrollmentError,
@@ -31,6 +32,7 @@ export interface EnrollmentProps {
   previousParish?: string;
   notes?: string;
   submittedBy: string;
+  centerId: string;
   submittedAt: Date;
   classId?: string;
   decidedBy?: string;
@@ -56,12 +58,12 @@ export type SubmitEnrollmentProps = Pick<
   | "previousParish"
   | "notes"
   | "submittedBy"
-> & { now: Date; documentsInPerson?: boolean };
+> & { now: Date; documentsInPerson?: boolean; centerId?: string };
 
 export type ConfirmFromPreviousProps = Pick<
   EnrollmentProps,
   "code" | "catechumenId" | "catecheticalYear" | "level" | "preferredSlot" | "submittedBy"
-> & { previous: Enrollment; now: Date };
+> & { previous: Enrollment; now: Date; centerId?: string };
 
 const S = EnrollmentStatus;
 /** Estados em que a coordenação ainda está a decidir. */
@@ -91,6 +93,7 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
     }
     return new Enrollment({
       ...props,
+      centerId: props.centerId ?? SEDE_CENTER_ID,
       previousParish: parish,
       notes: notes?.trim() || undefined,
       status: S.SUBMITTED,
@@ -105,9 +108,15 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
    * Confirmação de quem frequentou no ano anterior: já é conhecido, por isso
    * fica logo aprovada (falta só a turma).
    */
-  static confirmFromPrevious({ previous, now, ...props }: ConfirmFromPreviousProps): Enrollment {
+  static confirmFromPrevious({
+    previous,
+    now,
+    centerId,
+    ...props
+  }: ConfirmFromPreviousProps): Enrollment {
     return new Enrollment({
       ...props,
+      centerId: centerId ?? previous.centerId,
       type: EnrollmentType.RENEWAL,
       status: S.APPROVED,
       submittedAt: now,
@@ -158,6 +167,9 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
   }
   get submittedBy() {
     return this.props.submittedBy;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
   get submittedAt() {
     return this.props.submittedAt;

@@ -60,6 +60,7 @@ import {
   type EnrollmentActionBody,
   type EnrollmentListQuery,
 } from "./catechesis.schemas.js";
+import { listedCenter, scopeOf } from "./http-center.js";
 
 /** Coordenação da catequese: ano catequético, turmas e matrículas. */
 @ApiTags("Coordenação — catequese")
@@ -95,14 +96,20 @@ export class CoordinationController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(calendarSchema)) body: CalendarBody,
   ) {
-    return this.setCalendar.execute({ ...body, actorId: actor.accountId });
+    return this.setCalendar.execute({ ...body, actorId: actor.accountId, scope: scopeOf(actor) });
   }
 
   @Get("classes")
   @ApiOperation({ summary: "Turmas de um ano (por omissão, o em curso)" })
   @ApiZodQuery(classListSchema)
-  classes(@Query(new ZodValidationPipe(classListSchema)) query: { year?: string }) {
-    return this.listClasses.execute(query);
+  classes(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(classListSchema)) query: { year?: string; centerId?: string },
+  ) {
+    return this.listClasses.execute({
+      year: query.year,
+      centerId: listedCenter(scopeOf(actor), query.centerId),
+    });
   }
 
   @Post("classes")
@@ -112,7 +119,7 @@ export class CoordinationController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(createClassSchema)) body: CreateClassBody,
   ) {
-    return this.createClass.execute({ ...body, actorId: actor.accountId });
+    return this.createClass.execute({ ...body, actorId: actor.accountId, scope: scopeOf(actor) });
   }
 
   @Put("classes/:id/catechists")
@@ -124,21 +131,33 @@ export class CoordinationController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(classCatechistsSchema)) body: ClassCatechistsBody,
   ) {
-    return this.assignCatechists.execute({ ...body, actorId: actor.accountId, classId: id });
+    return this.assignCatechists.execute({
+      ...body,
+      actorId: actor.accountId,
+      classId: id,
+      scope: scopeOf(actor),
+    });
   }
 
   @Get("enrollments")
   @ApiOperation({ summary: "Matrículas do ano" })
   @ApiZodQuery(enrollmentListSchema)
-  enrollments(@Query(new ZodValidationPipe(enrollmentListSchema)) query: EnrollmentListQuery) {
-    return this.listEnrollments.execute(query);
+  enrollments(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(enrollmentListSchema)) query: EnrollmentListQuery,
+  ) {
+    const scope = scopeOf(actor);
+    return this.listEnrollments.execute({
+      ...query,
+      centerId: listedCenter(scope, query.centerId),
+    });
   }
 
   @Get("enrollments/:id")
   @ApiOperation({ summary: "Detalhe de uma matrícula" })
   @ApiParam({ name: "id", format: "uuid" })
-  detail(@Param("id", ParseUUIDPipe) id: string) {
-    return this.enrollmentDetail.execute({ enrollmentId: id });
+  detail(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.enrollmentDetail.execute({ enrollmentId: id, scope: scopeOf(actor) });
   }
 
   @Post("enrollments/:id/actions")
@@ -153,7 +172,12 @@ export class CoordinationController {
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(enrollmentActionSchema)) action: EnrollmentActionBody,
   ) {
-    return this.enrollmentAction.execute({ actorId: actor.accountId, enrollmentId: id, action });
+    return this.enrollmentAction.execute({
+      actorId: actor.accountId,
+      enrollmentId: id,
+      action,
+      scope: scopeOf(actor),
+    });
   }
 
   @Get("enrollments/:id/documents/:documentId/file")
@@ -184,6 +208,7 @@ export class CoordinationController {
     return this.confirm.execute({
       ...body,
       actorId: actor.accountId,
+      scope: scopeOf(actor),
       assisted: true,
       // Fora do prazo das famílias só com a permissão "fora do prazo".
       allowLate: actor.permissions.includes(Permission.LATE_ENROLLMENT),

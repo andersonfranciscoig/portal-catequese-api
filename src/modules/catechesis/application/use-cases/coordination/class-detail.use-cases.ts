@@ -17,6 +17,7 @@ import type {
   EnrollmentRepository,
   EvaluationRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { assertSameCenter, type CenterScope } from "../../center-scope.js";
 import { toClassViews } from "../../views.js";
 import type { CoordinationClassView } from "./class.use-cases.js";
 
@@ -27,10 +28,10 @@ export class ListYearsUseCase {
     private readonly calendars: CalendarRepository,
   ) {}
 
-  async execute(): Promise<{ year: string; active: boolean }[]> {
+  async execute({ centerId }: { centerId?: string } = {}): Promise<{ year: string; active: boolean }[]> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const years = new Set([calendar.label, ...(await this.classes.listYears())]);
+    const years = new Set([calendar.label, ...(await this.classes.listYears(centerId))]);
     return [...years]
       .sort()
       .reverse()
@@ -68,9 +69,16 @@ export class GetClassDetailUseCase {
     private readonly clock: Clock,
   ) {}
 
-  async execute({ classId }: { classId: string }): Promise<ClassDetailView> {
+  async execute({
+    classId,
+    scope,
+  }: {
+    classId: string;
+    scope?: CenterScope;
+  }): Promise<ClassDetailView> {
     const klass = await this.classes.findById(UniqueId.from(classId));
     if (!klass) throw new ClassNotFoundError();
+    assertSameCenter(scope, klass.centerId);
     const calendar = await this.calendars.get();
     const today = luandaToday(this.clock.now());
     const isCurrentYear = calendar?.label === klass.catecheticalYear;
@@ -138,9 +146,16 @@ export class GetClassResultsUseCase {
     private readonly evaluations: EvaluationRepository,
   ) {}
 
-  async execute({ classId }: { classId: string }): Promise<ClassResultsView> {
+  async execute({
+    classId,
+    scope,
+  }: {
+    classId: string;
+    scope?: CenterScope;
+  }): Promise<ClassResultsView> {
     const klass = await this.classes.findById(UniqueId.from(classId));
     if (!klass) throw new ClassNotFoundError();
+    assertSameCenter(scope, klass.centerId);
     const [enrolled, sheets, saved] = await Promise.all([
       this.enrollments.listConfirmedInClass(classId),
       this.attendance.listForClass(classId),

@@ -17,6 +17,7 @@ import type {
   CalendarRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { assertParish, type CenterScope } from "../../center-scope.js";
 import { compareCelebrations } from "../../../domain/sacraments.js";
 import { SACRAMENT_LABEL } from "./sacraments.use-cases.js";
 
@@ -89,7 +90,9 @@ export class SaveCalendarActivityUseCase {
     audience: CalendarActivityAudience;
     startsOn: string;
     endsOn?: string;
+    scope?: CenterScope;
   }): Promise<CalendarActivityView> {
+    assertParish(input.scope);
     const now = this.clock.now();
     if (!input.id) {
       const created = CalendarActivity.create({ ...input, createdBy: input.actorId, now });
@@ -122,7 +125,8 @@ export class DeleteCalendarActivityUseCase {
     private readonly activity: ActivityRecorder,
   ) {}
 
-  async execute(input: { actorId: string; id: string }) {
+  async execute(input: { actorId: string; id: string; scope?: CenterScope }) {
+    assertParish(input.scope);
     const current = await this.activities.findById(UniqueId.from(input.id));
     if (!current) throw new CalendarActivityNotFoundError();
     await this.activities.delete(current.id);

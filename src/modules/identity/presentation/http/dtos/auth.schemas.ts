@@ -19,6 +19,7 @@ export const registerSchema = z.object({
   phone: z.string().max(40),
   email: z.string().max(254),
   password: z.string().max(200),
+  centerId: z.uuid(),
 });
 
 export type RegisterBody = z.infer<typeof registerSchema>;
@@ -90,6 +91,7 @@ export type AccountQueryParams = z.infer<typeof accountQuerySchema>;
 
 export const permissionsSchema = z.object({
   permissions: z.array(z.enum(Permission)).max(10),
+  coordinationCenterId: z.uuid().nullable().optional(),
 });
 
 export type PermissionsBody = z.infer<typeof permissionsSchema>;
@@ -98,7 +100,10 @@ export const blockSchema = z.object({ reason: z.string().trim().min(3).max(300) 
 
 export type BlockBody = z.infer<typeof blockSchema>;
 
-export const catechistDecisionSchema = z.object({ decision: z.enum(["APPROVED", "REJECTED"]) });
+export const catechistDecisionSchema = z.object({
+  decision: z.enum(["APPROVED", "REJECTED"]),
+  centerId: z.uuid().optional(),
+});
 
 export type CatechistDecisionBody = z.infer<typeof catechistDecisionSchema>;
 

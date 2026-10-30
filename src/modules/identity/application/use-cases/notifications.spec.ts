@@ -76,6 +76,7 @@ describe("Notificações das contas", () => {
       actorId: adminId,
       accountId: account.id,
       permissions: ["COORDINATION", "FINANCE"],
+      coordinationCenterId: "a1000000-0000-4000-8000-000000000001",
     });
     expect(ctx.notifier.last("identity.coordination_granted")).toMatchObject({
       link: "/dashboard",

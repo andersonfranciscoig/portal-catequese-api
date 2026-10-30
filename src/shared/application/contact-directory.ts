@@ -10,6 +10,13 @@ export interface ContactPerson {
   staff: "ADMIN" | "COORDINATION" | null;
   /** Não está bloqueada. */
   active: boolean;
+  /**
+   * Centro da coordenação. Ausente (testes antigos): a equipa vê a paróquia.
+   * `null` com `generalCoordination` falso: a conta de coordenação não tem centro.
+   */
+  coordinationCenterId?: string | null;
+  /** Coordenação da paróquia inteira (ou administração). */
+  generalCoordination?: boolean;
 }
 
 /**

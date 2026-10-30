@@ -68,6 +68,7 @@ async function main() {
           permissions: ["SUPER_ADMIN"],
           status: "ACTIVE",
           betaAccess: true,
+          centerId: "a1000000-0000-4000-8000-000000000001",
           createdAt: now,
           updatedAt: now,
         },
@@ -101,22 +102,42 @@ async function main() {
     });
     console.log("Ano catequético 2026/2027 definido (com os prazos das famílias).");
 
-    // Celebrações do ano (só cria; a coordenação muda-as em Sacramentos).
+    const centers = [
+      ["a1000000-0000-4000-8000-000000000001", "Centro Sede", "Sede da paróquia"],
+      ["a1000000-0000-4000-8000-000000000002", "Santa Teresinha", "Santa Teresinha"],
+      ["a1000000-0000-4000-8000-000000000003", "Santo Expedito", "Santo Expedito"],
+    ] as const;
+    for (const [id, name, location] of centers) {
+      await prisma.center.upsert({
+        where: { id },
+        update: { name, location, status: "ACTIVE", updatedAt: now },
+        create: { id, name, location, status: "ACTIVE", createdAt: now, updatedAt: now },
+      });
+    }
+    console.log("Centros de catequese: Sede, Santa Teresinha e Santo Expedito.");
+
+    const sede = centers[0][0];
     for (const [type, date] of [
       ["FIRST_COMMUNION", "2027-05-30"],
       ["CONFIRMATION", "2027-06-20"],
     ] as const) {
-      await prisma.sacramentCelebration.upsert({
-        where: { catecheticalYear_type: { catecheticalYear: "2026/2027", type } },
-        update: {},
-        create: {
-          catecheticalYear: "2026/2027",
-          type,
-          date,
-          place: "Igreja Cristo Rei da Paz",
-          updatedAt: now,
-        },
+      const existing = await prisma.sacramentCelebration.findFirst({
+        where: { catecheticalYear: "2026/2027", type, centerId: sede },
       });
+      if (!existing) {
+        await prisma.sacramentCelebration.create({
+          data: {
+            id: randomUUID(),
+            catecheticalYear: "2026/2027",
+            type,
+            date,
+            place: "Igreja Cristo Rei da Paz",
+            centerId: sede,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
     }
     console.log("Primeira Comunhão e Crisma de 2026/2027 marcadas.");
   } finally {

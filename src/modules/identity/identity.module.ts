@@ -19,6 +19,7 @@ import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { AccountDirectoryService } from "./application/account-directory.service.js";
 import { IdentityContactDirectory } from "./application/identity-contact-directory.js";
 import { IdentityPeopleDirectory } from "./application/identity-people-directory.js";
+import { CoordinationCenterLookup } from "./application/ports/coordination-center-lookup.js";
 import { AccessTokenIssuer } from "./application/ports/access-token-issuer.js";
 import { RefreshTokenGenerator } from "./application/ports/refresh-token-generator.js";
 import { SessionIssuer } from "./application/session-issuer.js";
@@ -54,6 +55,7 @@ import { BcryptPasswordHasher } from "./infrastructure/crypto/bcrypt-password-ha
 import { CryptoRefreshTokenGenerator } from "./infrastructure/crypto/crypto-refresh-token.generator.js";
 import { JwtAccessTokenIssuer } from "./infrastructure/crypto/jwt-access-token.issuer.js";
 import { PrismaAccountRepository } from "./infrastructure/persistence/prisma/prisma-account.repository.js";
+import { PrismaCoordinationCenterLookup } from "./infrastructure/persistence/prisma/prisma-coordination-center-lookup.js";
 import { PrismaEmailChallenges } from "./infrastructure/persistence/prisma/prisma-email-challenges.js";
 import { PrismaSessionRepository } from "./infrastructure/persistence/prisma/prisma-session.repository.js";
 import { AdminAccountsController } from "./presentation/http/admin-accounts.controller.js";
@@ -82,6 +84,7 @@ const AUDIT = ActivityRecorder;
   controllers: [AuthController, AdminAccountsController, CoordinationCatechistsController],
   providers: [
     { provide: AccountRepository, useClass: PrismaAccountRepository },
+    { provide: CoordinationCenterLookup, useClass: PrismaCoordinationCenterLookup },
     { provide: SessionRepository, useClass: PrismaSessionRepository },
     {
       provide: EmailChallenges,
@@ -134,6 +137,7 @@ const AUDIT = ActivityRecorder;
       Clock,
       Notifier,
       Mailer,
+      CoordinationCenterLookup,
     ]),
     provideUseCase(RequestRegistrationUseCase, [
       AccountRepository,
@@ -141,6 +145,7 @@ const AUDIT = ActivityRecorder;
       SignInPolicy,
       EmailChallenges,
       Mailer,
+      CoordinationCenterLookup,
     ]),
     provideUseCase(ConfirmRegistrationUseCase, [EmailChallenges, RegisterAccountUseCase]),
     provideUseCase(RequestPasswordResetUseCase, [AccountRepository, EmailChallenges, Mailer]),
@@ -183,10 +188,22 @@ const AUDIT = ActivityRecorder;
     provideUseCase(ListCatechistApplicationsUseCase, [AccountRepository]),
     provideUseCase(GetAccountUseCase, [AccountRepository]),
     provideUseCase(GetAccountStatsUseCase, [AccountRepository]),
-    provideUseCase(SetAccountPermissionsUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
+    provideUseCase(SetAccountPermissionsUseCase, [
+      AccountRepository,
+      AUDIT,
+      Clock,
+      Notifier,
+      CoordinationCenterLookup,
+    ]),
     provideUseCase(BlockAccountUseCase, [AccountRepository, SessionRepository, AUDIT, Clock]),
     provideUseCase(UnblockAccountUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
-    provideUseCase(DecideCatechistUseCase, [AccountRepository, AUDIT, Clock, Notifier]),
+    provideUseCase(DecideCatechistUseCase, [
+      AccountRepository,
+      AUDIT,
+      Clock,
+      Notifier,
+      CoordinationCenterLookup,
+    ]),
     provideUseCase(SetBetaAccessUseCase, [AccountRepository, AUDIT, Clock]),
     provideUseCase(SetAccountRolesUseCase, [AccountRepository, EventBus, AUDIT, Clock, Notifier]),
     provideUseCase(GrantBetaAccessByContactUseCase, [AccountRepository, Clock]),

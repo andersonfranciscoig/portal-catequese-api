@@ -2,6 +2,7 @@ import type { ActivityRecorder } from "../../../../../shared/application/activit
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
+import { centerRef, SEDE_CENTER_ID } from "../../../domain/center.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
 import {
   CatechesisLevel,
@@ -15,6 +16,7 @@ import { addMonths, isIsoDate } from "../../../domain/dates.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
 import {
   CalendarNotDefinedError,
+  CenterForbiddenError,
   CelebrationNotFoundError,
   ClassNotFoundError,
   InvalidCelebrationError,
@@ -34,10 +36,20 @@ import type {
   EvaluationRepository,
   SacramentRecordRepository,
   SacramentRepository,
+  CenterRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import {
+  assertSameCenter,
+  matchesCenter,
+  resolveWriteCenter,
+  type CenterScope,
+} from "../../center-scope.js";
 import type { SacramentRecord } from "../../../domain/sacrament-records.js";
 import {
   CANDIDATE_LEVEL,
+  CANDIDATE_LEVELS,
+  isCandidateLevel,
+  selectionSacramentTypes,
   celebrationMode,
   compareCelebrations,
   distributeGroups,
@@ -89,6 +101,8 @@ const LEVEL_ORDER = Object.values(CatechesisLevel);
 export interface CelebrationView {
   id: string;
   type: SacramentType;
+  /** Batismo celebrado junto com a Primeira Comunhão. */
+  withCommunion: boolean;
   /** YYYY-MM-DD */
   date: string;
   /** "HH:mm" */
@@ -106,6 +120,7 @@ export interface CelebrationView {
   completedAt: string | null;
   /** Quantos receberam nesta celebração (registos dela). */
   receivedCount: number;
+  center: { id: string; name: string };
   createdAt: string;
   updatedAt: string;
 }
@@ -175,6 +190,9 @@ export interface SelectableClassView {
   eligible: number;
   /** Nível que prepara este sacramento (aparece primeiro). */
   isCandidateLevel: boolean;
+  special: boolean;
+  sacrament: SacramentType | null;
+  audience: "CHILD" | "ADULT" | null;
   /** A turma inteira já está noutra celebração do mesmo sacramento. */
   takenBy: { celebrationId: string; date: string } | null;
 }
@@ -317,11 +335,16 @@ export class SacramentCandidates {
     return (await year.pairs()).filter(({ catechumen }) => !received.has(catechumen.id.value));
   }
 
-  /** Candidatos: o nível que prepara o sacramento. */
+  /** Candidatos do percurso: o último ano (crisma: 2.º ou 3.º), sem turmas especiais. */
   async candidatePairs(year: SacramentYear, type: SacramentType): Promise<Pair[]> {
-    return (await this.eligiblePairs(year, type)).filter(
-      ({ enrollment }) => enrollment.level === CANDIDATE_LEVEL[type],
+    const special = new Set(
+      (await year.classes()).filter((item) => item.isSpecial).map((item) => item.id.value),
     );
+    return (await this.eligiblePairs(year, type)).filter((pair) => {
+      const classId = classOf(pair);
+      if (classId && special.has(classId)) return false;
+      return CANDIDATE_LEVELS[type].includes(pair.enrollment.level);
+    });
   }
 
   /** Requisitos, notas e presença de cada um (por ordem alfabética). */
@@ -381,13 +404,15 @@ export class SacramentCandidates {
           (item) => item.classId === classId && item.catechumenId === id,
         );
         const average = evaluation ? averageGrade(evaluation.grades) : undefined;
-        const aptitude = sacramentAptitude({
-          average,
-          attendanceRate: rate,
-          missing: requirements
-            .filter((item) => !item.met)
-            .map((item) => REQUIREMENT_LABEL[item.requirement]),
-        });
+        const aptitude = klass?.isSpecial
+          ? { eligible: true, reasons: ["Turma especial: pode receber sem o percurso completo."] }
+          : sacramentAptitude({
+              average,
+              attendanceRate: rate,
+              missing: requirements
+                .filter((item) => !item.met)
+                .map((item) => REQUIREMENT_LABEL[item.requirement]),
+            });
         return {
           catechumenId: id,
           enrollmentId: enrollment.id.value,
@@ -431,9 +456,10 @@ export class SacramentCandidates {
   }
 
   /** Quantos catequizandos com matrícula no ano já receberam o Batismo e a Comunhão. */
-  async received(calendar: CatecheticalCalendar) {
+  async received(calendar: CatecheticalCalendar, centerId?: string) {
     const active = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter(
-      (item) => ACTIVE.includes(item.status),
+      (item) =>
+        ACTIVE.includes(item.status) && (!centerId || (item.centerId ?? SEDE_CENTER_ID) === centerId),
     );
     const catechumens = await this.catechumens.findByIds(active.map((item) => item.catechumenId));
     return {
@@ -463,6 +489,36 @@ export interface SacramentPlan {
 const isCompleted = (celebration: SacramentCelebration, reopen?: string) =>
   Boolean(celebration.completedAt) && celebration.id !== reopen;
 
+/** Turmas finais da comunhão (e especiais) para um batismo com comunhão no mesmo dia. */
+async function pairsForCombined(
+  year: SacramentYear,
+  celebration: { withCommunion?: boolean; selection: CelebrationSelection },
+): Promise<Pair[]> {
+  if (!celebration.withCommunion) return [];
+  const classes = await year.classes();
+  const manual = celebrationMode(celebration.selection) === "MANUAL";
+  const selected = new Set(celebration.selection.classIds);
+  const people = new Set(celebration.selection.catechumenIds);
+  const received = new Set(
+    (await year.records())
+      .filter((item) => item.type === "FIRST_COMMUNION")
+      .map((item) => item.catechumenId),
+  );
+  return (await year.pairs()).filter((pair) => {
+    if (received.has(pair.catechumen.id.value)) return false;
+    const classId = classOf(pair) ?? "";
+    const klass = classes.find((item) => item.id.value === classId);
+    const specialMatch =
+      klass?.isSpecial &&
+      (klass.sacrament === "FIRST_COMMUNION" || klass.sacrament === "BAPTISM");
+    const finalYear = CANDIDATE_LEVELS.FIRST_COMMUNION.includes(pair.enrollment.level);
+    if (manual) {
+      return (specialMatch || finalYear) && (selected.has(classId) || people.has(pair.catechumen.id.value));
+    }
+    return finalYear && !klass?.isSpecial;
+  });
+}
+
 /**
  * As celebrações e quem vai a cada uma:
  * - MANUAL: as turmas escolhidas (inteiras) e os catequizandos escolhidos;
@@ -486,24 +542,40 @@ export class SacramentCelebrations {
     type: SacramentType,
     saved?: SacramentCelebration[],
     reopen?: string,
+    centerId?: string,
   ): Promise<SacramentPlan> {
     saved ??= await this.sacraments.listCelebrations(year.calendar.label);
+    if (centerId) saved = saved.filter((item) => (item.centerId ?? SEDE_CENTER_ID) === centerId);
     const all = saved.filter((item) => item.type === type).sort(compareCelebrations);
     const celebrations = all.filter((item) => !isCompleted(item, reopen));
-    const eligible = await this.candidates.eligiblePairs(year, type, reopen);
-    const candidatePairs = eligible.filter(
-      ({ enrollment }) => enrollment.level === CANDIDATE_LEVEL[type],
-    );
+    let eligible = await this.candidates.eligiblePairs(year, type, reopen);
+    if (centerId) {
+      eligible = eligible.filter((pair) => (pair.enrollment.centerId ?? SEDE_CENTER_ID) === centerId);
+    }
     const manual = celebrations.filter((item) => celebrationMode(item.selection) === "MANUAL");
     const chosenClasses = new Set(manual.flatMap((item) => item.selection.classIds));
     const chosenPeople = new Set(manual.flatMap((item) => item.selection.catechumenIds));
     // Só se avaliam os que podem entrar nalguma celebração.
-    const needed = eligible.filter(
-      (pair) =>
-        pair.enrollment.level === CANDIDATE_LEVEL[type] ||
-        chosenClasses.has(classOf(pair) ?? "") ||
-        chosenPeople.has(pair.catechumen.id.value),
+    const yearClasses = await year.classes();
+    const specialIds = new Set(
+      yearClasses.filter((item) => item.isSpecial).map((item) => item.id.value),
     );
+    const candidatePairs = eligible.filter((pair) => {
+      const classId = classOf(pair);
+      if (classId && specialIds.has(classId)) return false;
+      return CANDIDATE_LEVELS[type].includes(pair.enrollment.level);
+    });
+    const needed = eligible.filter((pair) => {
+      const classId = classOf(pair);
+      if (classId && specialIds.has(classId)) {
+        return chosenClasses.has(classId) || chosenPeople.has(pair.catechumen.id.value);
+      }
+      return (
+        CANDIDATE_LEVELS[type].includes(pair.enrollment.level) ||
+        chosenClasses.has(classId ?? "") ||
+        chosenPeople.has(pair.catechumen.id.value)
+      );
+    });
     const assessed = new Map(
       (await this.candidates.assess(year, type, needed)).map((item) => [item.catechumenId, item]),
     );
@@ -511,7 +583,18 @@ export class SacramentCelebrations {
     const participants = new Map<string, ParticipantView[]>();
     const taken = new Set<string>();
     for (const celebration of manual) {
-      const chosen = this.chosen(celebration.selection, needed, assessed);
+      let pool = needed;
+      if (celebration.withCommunion) {
+        const extra = await pairsForCombined(year, celebration);
+        const extraAssessed = await this.candidates.assess(year, "FIRST_COMMUNION", extra);
+        for (const item of extraAssessed) assessed.set(item.catechumenId, item);
+        pool = [...needed, ...extra];
+      }
+      const chosen = this.chosen(celebration.selection, pool, assessed).filter((item) => {
+        if (item.source === "INDIVIDUAL") return true;
+        const klass = yearClasses.find((entry) => entry.id.value === item.classId);
+        return Boolean(klass?.isSpecial) || item.eligible;
+      });
       chosen.forEach((item) => taken.add(item.catechumenId));
       participants.set(celebration.id, chosen.sort(byName));
     }
@@ -523,24 +606,52 @@ export class SacramentCelebrations {
       .filter((item) => item.eligible && !taken.has(item.catechumenId))
       .sort(bySuggestion);
     const auto = celebrations.filter((item) => celebrationMode(item.selection) === "AUTO");
-    const groups = new Map<string, ParticipantView[]>();
-    for (const item of suggested) {
-      // Pelo nome da turma (único no ano): o empate desfaz-se sempre igual.
-      const key = item.classLabel ?? "";
-      groups.set(key, [...(groups.get(key) ?? []), item]);
-    }
-    const buckets = distributeGroups(
-      [...groups.entries()].map(([key, items]) => ({ key, items })),
-      auto.length,
+    const centerOfPerson = new Map(
+      candidatePairs.map((pair) => [
+        pair.catechumen.id.value,
+        pair.enrollment.centerId ?? SEDE_CENTER_ID,
+      ]),
     );
-    auto.forEach((celebration, index) => {
-      participants.set(
-        celebration.id,
-        buckets[index]
-          .map((item) => ({ ...item, source: "SUGGESTED" as const }))
-          .sort(bySuggestion),
+    const autoCenters = [...new Set(auto.map((item) => item.centerId ?? SEDE_CENTER_ID))];
+    for (const center of autoCenters) {
+      const autoHere = auto.filter((item) => (item.centerId ?? SEDE_CENTER_ID) === center);
+      const suggestedHere = suggested.filter(
+        (item) => (centerOfPerson.get(item.catechumenId) ?? SEDE_CENTER_ID) === center,
       );
-    });
+      const groups = new Map<string, ParticipantView[]>();
+      for (const item of suggestedHere) {
+        const key = item.classLabel ?? "";
+        groups.set(key, [...(groups.get(key) ?? []), item]);
+      }
+      const buckets = distributeGroups(
+        [...groups.entries()].map(([key, items]) => ({ key, items })),
+        autoHere.length,
+      );
+      autoHere.forEach((celebration, index) => {
+        participants.set(
+          celebration.id,
+          buckets[index]
+            .map((item) => ({ ...item, source: "SUGGESTED" as const }))
+            .sort(bySuggestion),
+        );
+      });
+      const combined = autoHere.filter((item) => item.withCommunion);
+      if (combined.length) {
+        const pairs = (await pairsForCombined(year, {
+          withCommunion: true,
+          selection: { classIds: [], catechumenIds: [] },
+        })).filter((pair) => (pair.enrollment.centerId ?? SEDE_CENTER_ID) === center);
+        const extra = await this.candidates.assess(year, "FIRST_COMMUNION", pairs);
+        const target = combined[0];
+        const current = participants.get(target.id) ?? [];
+        const ids = new Set(current.map((item) => item.catechumenId));
+        const added = extra
+          .filter((item) => item.eligible && !taken.has(item.catechumenId) && !ids.has(item.catechumenId))
+          .map((item) => ({ ...item, source: "SUGGESTED" as const }));
+        added.forEach((item) => taken.add(item.catechumenId));
+        participants.set(target.id, [...current, ...added].sort(bySuggestion));
+      }
+    }
 
     // Concluídas: quem tem o registo de cada uma.
     const records = (await year.records()).filter((item) => item.type === type);
@@ -625,6 +736,7 @@ export class SacramentCelebrations {
       place: celebration.place,
       notes: celebration.notes ?? null,
       mode: celebrationMode(celebration.selection),
+      withCommunion: celebration.withCommunion === true,
       selection: {
         classIds: [...celebration.selection.classIds],
         catechumenIds: [...celebration.selection.catechumenIds],
@@ -634,6 +746,7 @@ export class SacramentCelebrations {
       status: celebration.completedAt ? "COMPLETED" : "SCHEDULED",
       completedAt: celebration.completedAt?.toISOString() ?? null,
       receivedCount,
+      center: centerRef(celebration.centerId ?? SEDE_CENTER_ID),
       createdAt: celebration.createdAt.toISOString(),
       updatedAt: celebration.updatedAt.toISOString(),
     };
@@ -668,13 +781,13 @@ export class SacramentCelebrations {
 export class GetSacramentsOverviewUseCase {
   constructor(private readonly celebrations: SacramentCelebrations) {}
 
-  async execute(): Promise<SacramentsOverviewView> {
+  async execute({ centerId }: { centerId?: string } = {}): Promise<SacramentsOverviewView> {
     const candidates = this.celebrations.candidates;
     const calendar = await candidates.calendar();
     const year = await candidates.year(calendar);
     const [plans, received] = await Promise.all([
-      Promise.all(SACRAMENT_TYPES.map((type) => this.celebrations.plan(year, type))),
-      candidates.received(calendar),
+      Promise.all(SACRAMENT_TYPES.map((type) => this.celebrations.plan(year, type, undefined, undefined, centerId))),
+      candidates.received(calendar, centerId),
     ]);
     const views = plans
       .flatMap((plan) => plan.celebrations.map((celebration) => ({ celebration, plan })))
@@ -782,6 +895,7 @@ export interface CelebrationInput {
   place: string;
   notes?: string | null;
   selection: CelebrationSelection;
+  withCommunion?: boolean;
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -817,6 +931,7 @@ async function cleanCelebration(
   input: CelebrationInput,
   type: SacramentType,
   year: SacramentYear,
+  centerId?: string,
 ): Promise<Omit<CelebrationInput, "time" | "notes"> & { time?: string; notes?: string }> {
   const { calendar } = year;
   const latest = addMonths(calendar.endsOn, MONTHS_AFTER_YEAR);
@@ -826,18 +941,41 @@ async function cleanCelebration(
     );
   }
   const { time, place, notes } = cleanDetails(input);
+  const withCommunion = type === "BAPTISM" && input.withCommunion === true;
 
   const classIds = [...new Set(input.selection.classIds)].sort();
   const catechumenIds = [...new Set(input.selection.catechumenIds)].sort();
-  const classes = new Set((await year.classes()).map((item) => item.id.value));
+  const yearClasses = await year.classes();
+  const classes = new Map(yearClasses.map((item) => [item.id.value, item]));
   if (classIds.some((id) => !classes.has(id))) {
     throw new InvalidCelebrationError("Há turmas escolhidas que não são do ano em curso.");
+  }
+  if (
+    classIds.some((id) => {
+      const klass = classes.get(id)!;
+      const specialMatch =
+        klass.isSpecial &&
+        klass.sacrament !== undefined &&
+        selectionSacramentTypes(type, withCommunion).includes(klass.sacrament);
+      return !specialMatch && !isCandidateLevel(type, klass.level, withCommunion);
+    })
+  ) {
+    throw new InvalidCelebrationError("Há turmas que não preparam este sacramento.");
   }
   const pairs = new Map((await year.pairs()).map((pair) => [pair.catechumen.id.value, pair]));
   if (catechumenIds.some((id) => !pairs.has(id))) {
     throw new InvalidCelebrationError(
       "Há catequizandos escolhidos sem matrícula aceite no ano em curso.",
     );
+  }
+  if (centerId) {
+    const otherClass = classIds.some(
+      (id) => (classes.get(id)?.centerId ?? SEDE_CENTER_ID) !== centerId,
+    );
+    const otherPerson = catechumenIds.some(
+      (id) => (pairs.get(id)?.enrollment.centerId ?? SEDE_CENTER_ID) !== centerId,
+    );
+    if (otherClass || otherPerson) throw new CenterForbiddenError();
   }
   const recorded = new Set(
     (await year.records()).filter((item) => item.type === type).map((item) => item.catechumenId),
@@ -850,7 +988,14 @@ async function cleanCelebration(
       `${received.join(", ")} já ${received.length === 1 ? "tem" : "têm"} ${THE_SACRAMENT[type]} registad${type === "FIRST_COMMUNION" ? "a" : "o"}.`,
     );
   }
-  return { date: input.date, time, place, notes, selection: { classIds, catechumenIds } };
+  return {
+    date: input.date,
+    time,
+    place,
+    notes,
+    withCommunion,
+    selection: { classIds, catechumenIds },
+  };
 }
 
 /** Quem a seleção desta celebração já tem noutra celebração manual do mesmo sacramento. */
@@ -915,18 +1060,26 @@ export class CreateCelebrationUseCase {
     private readonly sacraments: SacramentRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
   async execute(
-    input: CelebrationInput & { actorId: string; type: SacramentType },
+    input: CelebrationInput & {
+      actorId: string;
+      type: SacramentType;
+      centerId?: string;
+      scope?: CenterScope;
+    },
   ): Promise<CelebrationView> {
     const year = await this.celebrations.candidates.year();
-    const clean = await cleanCelebration(input, input.type, year);
+    const centerId = await resolveWriteCenter(this.centers, input.scope, input.centerId);
+    const clean = await cleanCelebration(input, input.type, year, centerId);
     const now = this.clock.now();
     const celebration: SacramentCelebration = {
       id: UniqueId.create().value,
       catecheticalYear: year.calendar.label,
       type: input.type,
+      centerId,
       ...clean,
       createdAt: now,
       createdBy: input.actorId,
@@ -957,10 +1110,11 @@ export class UpdateCelebrationUseCase {
   ) {}
 
   async execute(
-    input: CelebrationInput & { actorId: string; id: string },
+    input: CelebrationInput & { actorId: string; id: string; scope?: CenterScope },
   ): Promise<CelebrationView> {
     const year = await this.celebrations.candidates.year();
     const current = await this.celebrations.find(input.id, year);
+    assertSameCenter(input.scope, current.centerId ?? SEDE_CENTER_ID);
     if (current.completedAt) {
       // Concluída: já não muda a data nem quem foi (só a hora, o local e as notas).
       if (input.date !== current.date || !sameSelection(input.selection, current.selection)) {
@@ -983,7 +1137,12 @@ export class UpdateCelebrationUseCase {
       });
       return this.celebrations.view(year, celebration);
     }
-    const clean = await cleanCelebration(input, current.type, year);
+    const clean = await cleanCelebration(
+      input,
+      current.type,
+      year,
+      current.centerId ?? SEDE_CENTER_ID,
+    );
     const celebration: SacramentCelebration = {
       ...current,
       ...clean,
@@ -1012,9 +1171,10 @@ export class DeleteCelebrationUseCase {
     private readonly activity: ActivityRecorder,
   ) {}
 
-  async execute(input: { actorId: string; id: string }): Promise<void> {
+  async execute(input: { actorId: string; id: string; scope?: CenterScope }): Promise<void> {
     const year = await this.celebrations.candidates.year();
     const celebration = await this.celebrations.find(input.id, year);
+    assertSameCenter(input.scope, celebration.centerId ?? SEDE_CENTER_ID);
     if (celebration.completedAt) {
       throw new InvalidCelebrationError(
         "Esta celebração já foi concluída e tem os sacramentos registados: não pode ser apagada.",
@@ -1038,9 +1198,11 @@ export class ListCelebrationParticipantsUseCase {
     id: string;
     search?: string;
     filter?: CandidateFilter;
+    scope?: CenterScope;
   }): Promise<{ items: ParticipantView[] }> {
     const year = await this.celebrations.candidates.year();
     const celebration = await this.celebrations.find(query.id, year);
+    assertSameCenter(query.scope, celebration.centerId ?? SEDE_CENTER_ID);
     const plan = await this.celebrations.plan(year, celebration.type);
     return { items: filterPeople(plan.participants.get(celebration.id) ?? [], query) };
   }
@@ -1050,7 +1212,15 @@ export class ListCelebrationParticipantsUseCase {
 export class ListSelectableClassesUseCase {
   constructor(private readonly celebrations: SacramentCelebrations) {}
 
-  async execute({ type }: { type: SacramentType }): Promise<{ items: SelectableClassView[] }> {
+  async execute({
+    type,
+    centerId,
+    withCommunion = false,
+  }: {
+    type: SacramentType;
+    centerId?: string;
+    withCommunion?: boolean;
+  }): Promise<{ items: SelectableClassView[] }> {
     const candidates = this.celebrations.candidates;
     const year = await candidates.year();
     const [classes, pairs, plan] = await Promise.all([
@@ -1064,7 +1234,37 @@ export class ListSelectableClassesUseCase {
       type,
       eligiblePairs.filter((pair) => classOf(pair) !== null),
     );
-    const items = classes.map((klass): SelectableClassView => {
+    const communionEligible = new Map<string, number>();
+    if (type === "BAPTISM" && withCommunion) {
+      const communionPairs = (await candidates.eligiblePairs(year, "FIRST_COMMUNION")).filter(
+        (pair) => {
+          const classId = classOf(pair);
+          const klass = classes.find((item) => item.id.value === classId);
+          return (
+            klass !== undefined &&
+            (CANDIDATE_LEVELS.FIRST_COMMUNION.includes(klass.level) ||
+              (klass.isSpecial && klass.sacrament === "FIRST_COMMUNION"))
+          );
+        },
+      );
+      const extra = await candidates.assess(year, "FIRST_COMMUNION", communionPairs);
+      for (const item of extra) {
+        if (!item.eligible || !item.classId) continue;
+        communionEligible.set(item.classId, (communionEligible.get(item.classId) ?? 0) + 1);
+      }
+    }
+    const items = classes
+      .filter((klass) => matchesCenter(klass.centerId, centerId))
+      .filter((klass) => {
+        if (klass.isSpecial) {
+          return (
+            klass.sacrament !== undefined &&
+            selectionSacramentTypes(type, withCommunion).includes(klass.sacrament)
+          );
+        }
+        return isCandidateLevel(type, klass.level, withCommunion);
+      })
+      .map((klass): SelectableClassView => {
       const id = klass.id.value;
       // Uma concluída já não prende a turma (quem não recebeu pode ir a outra).
       const taken = plan.celebrations.find(
@@ -1075,18 +1275,26 @@ export class ListSelectableClassesUseCase {
         label: classShortLabel(klass),
         level: klass.level,
         members: pairs.filter((pair) => classOf(pair) === id).length,
-        eligible: assessed.filter((item) => item.classId === id && item.eligible).length,
-        isCandidateLevel: klass.level === CANDIDATE_LEVEL[type],
+        eligible:
+          communionEligible.get(id) ??
+          assessed.filter((item) => item.classId === id && item.eligible).length,
+        isCandidateLevel: !klass.isSpecial && isCandidateLevel(type, klass.level, withCommunion),
+        special: klass.isSpecial,
+        sacrament: klass.sacrament ?? null,
+        audience: klass.audience ?? null,
         takenBy: taken ? { celebrationId: taken.id, date: taken.date } : null,
       };
     });
     return {
-      items: items.sort(
-        (a, b) =>
-          Number(b.isCandidateLevel) - Number(a.isCandidateLevel) ||
-          LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level) ||
-          a.label.localeCompare(b.label, "pt"),
-      ),
+      items: items
+        .filter((item) => item.special || item.members > 0)
+        .sort(
+          (a, b) =>
+            Number(b.special) - Number(a.special) ||
+            Number(b.isCandidateLevel) - Number(a.isCandidateLevel) ||
+            LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level) ||
+            a.label.localeCompare(b.label, "pt"),
+        ),
     };
   }
 }
@@ -1098,14 +1306,24 @@ export class ListClassMembersForSacramentUseCase {
   async execute(query: {
     classId: string;
     type: SacramentType;
+    withCommunion?: boolean;
+    scope?: CenterScope;
   }): Promise<{ items: ParticipantView[] }> {
     const candidates = this.celebrations.candidates;
     const year = await candidates.year();
     const klass = (await year.classes()).find((item) => item.id.value === query.classId);
     if (!klass) throw new ClassNotFoundError();
-    const members = (await candidates.eligiblePairs(year, query.type)).filter(
+    assertSameCenter(query.scope, klass.centerId);
+    const communionTrack =
+      query.type === "BAPTISM" &&
+      query.withCommunion === true &&
+      (CANDIDATE_LEVELS.FIRST_COMMUNION.includes(klass.level) ||
+        klass.sacrament === "FIRST_COMMUNION");
+    const assessType = communionTrack ? "FIRST_COMMUNION" : query.type;
+    const members = (await candidates.eligiblePairs(year, assessType)).filter(
       (pair) => classOf(pair) === query.classId,
     );
-    return { items: await candidates.assess(year, query.type, members, "INDIVIDUAL") };
+    const items = await candidates.assess(year, assessType, members, "INDIVIDUAL");
+    return { items: klass.isSpecial ? items : items.filter((item) => item.eligible) };
   }
 }

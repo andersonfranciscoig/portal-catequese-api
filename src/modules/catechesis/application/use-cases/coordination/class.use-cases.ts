@@ -4,7 +4,12 @@ import type { Notifier } from "../../../../../shared/application/notifier.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import type { CatechesisLevel, SessionSlot } from "../../../domain/catechesis.js";
-import { CatechesisClass, type ClassCatechist } from "../../../domain/catechesis-class.js";
+import {
+  CatechesisClass,
+  type ClassAudience,
+  type ClassCatechist,
+} from "../../../domain/catechesis-class.js";
+import type { SacramentType } from "../../../domain/sacraments.js";
 import { luandaToday } from "../../../domain/dates.js";
 import {
   CalendarNotDefinedError,
@@ -14,9 +19,16 @@ import {
 } from "../../../domain/errors/catechesis.errors.js";
 import type {
   CalendarRepository,
+  CenterRepository,
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import {
+  assertSameCenter,
+  matchesCenter,
+  resolveWriteCenter,
+  type CenterScope,
+} from "../../center-scope.js";
 import { classLabel, classSchedule } from "../../messages.js";
 import { toClassViews, type ClassView } from "../../views.js";
 
@@ -44,10 +56,15 @@ export class ListClassesUseCase {
   ) {}
 
   /** Sem ano, o ano em curso. */
-  async execute({ year }: { year?: string } = {}): Promise<CoordinationClassView[]> {
+  async execute({
+    year,
+    centerId,
+  }: { year?: string; centerId?: string } = {}): Promise<CoordinationClassView[]> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const classes = await this.classes.listByYear(year ?? calendar.label);
+    const classes = (await this.classes.listByYear(year ?? calendar.label)).filter((item) =>
+      matchesCenter(item.centerId, centerId),
+    );
     const views = await toClassViews(classes, this.people, calendar, luandaToday(this.clock.now()));
     return withMembers(views, this.enrollments);
   }
@@ -55,12 +72,17 @@ export class ListClassesUseCase {
 
 export interface CreateClassInput {
   actorId: string;
-  level: CatechesisLevel;
+  kind?: "REGULAR" | "SPECIAL";
+  level?: CatechesisLevel;
+  sacrament?: SacramentType;
+  audience?: ClassAudience;
   section: string;
   slot: SessionSlot;
   startTime?: string;
   room: string;
   capacity: number;
+  centerId?: string;
+  scope?: CenterScope;
 }
 
 export class CreateClassUseCase {
@@ -70,17 +92,51 @@ export class CreateClassUseCase {
     private readonly people: PeopleDirectory,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
-  async execute({ actorId, ...input }: CreateClassInput): Promise<CoordinationClassView> {
+  async execute({ actorId, scope, centerId, ...input }: CreateClassInput): Promise<CoordinationClassView> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const klass = CatechesisClass.create({
-      ...input,
-      catecheticalYear: calendar.label,
-      now: this.clock.now(),
-    });
-    if (await this.classes.exists(calendar.label, klass.level, klass.section)) {
+    const resolved = await resolveWriteCenter(this.centers!, scope, centerId);
+    const special = input.kind === "SPECIAL";
+    if (special && (!input.sacrament || !input.audience)) {
+      throw new InvalidClassError("Indique o sacramento e se a turma é de crianças ou de adultos.");
+    }
+    if (!special && !input.level) throw new InvalidClassError("Indique o ano da turma.");
+    const klass = special
+      ? CatechesisClass.createSpecial({
+          sacrament: input.sacrament!,
+          audience: input.audience!,
+          section: input.section,
+          slot: input.slot,
+          startTime: input.startTime,
+          room: input.room,
+          capacity: input.capacity,
+          centerId: resolved,
+          catecheticalYear: calendar.label,
+          now: this.clock.now(),
+        })
+      : CatechesisClass.create({
+          level: input.level!,
+          section: input.section,
+          slot: input.slot,
+          startTime: input.startTime,
+          room: input.room,
+          capacity: input.capacity,
+          centerId: resolved,
+          catecheticalYear: calendar.label,
+          now: this.clock.now(),
+        });
+    if (
+      await this.classes.exists(
+        calendar.label,
+        klass.level,
+        klass.section,
+        klass.centerId,
+        klass.kind,
+      )
+    ) {
       throw new ClassAlreadyExistsError();
     }
     await this.classes.save(klass);
@@ -104,6 +160,7 @@ export interface AssignCatechistsInput {
   actorId: string;
   classId: string;
   catechists: ClassCatechist[];
+  scope?: CenterScope;
 }
 
 /** Define os catequistas da turma (todos aprovados e sem outra turma no mesmo ano). */
@@ -122,9 +179,11 @@ export class AssignCatechistsUseCase {
     actorId,
     classId,
     catechists,
+    scope,
   }: AssignCatechistsInput): Promise<CoordinationClassView> {
     const klass = await this.classes.findById(UniqueId.from(classId));
     if (!klass) throw new ClassNotFoundError();
+    assertSameCenter(scope, klass.centerId);
     const people = await this.people.findMany(catechists.map((item) => item.accountId));
     if (
       people.length !== new Set(catechists.map((item) => item.accountId)).size ||

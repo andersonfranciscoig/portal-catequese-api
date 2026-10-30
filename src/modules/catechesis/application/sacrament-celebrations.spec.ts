@@ -296,7 +296,14 @@ describe("Celebrações dos sacramentos", () => {
       reasons: ["Média 14,5", "Presença 100%"],
       source: "INDIVIDUAL",
     });
-    expect(byName["Beto Baixo"]).toMatchObject({
+    expect(items.map((item) => item.fullName)).toEqual(["Ana Apta"]);
+    expect(
+      sacramentAptitude({
+        average: 8,
+        attendanceRate: 100,
+        missing: ["Certidão de batismo", "Primeira Reconciliação"],
+      }),
+    ).toEqual({
       eligible: false,
       reasons: [
         "Média 8,0 (abaixo de 10)",
@@ -304,13 +311,11 @@ describe("Celebrações dos sacramentos", () => {
         "Falta: Certidão de batismo, Primeira Reconciliação",
       ],
     });
-    expect(byName["Carla Sem Notas"]).toMatchObject({
-      average: null,
+    expect(sacramentAptitude({ attendanceRate: 100, missing: [] })).toEqual({
       eligible: false,
       reasons: ["Sem notas lançadas", "Presença 100%"],
     });
-    expect(byName["Dário Faltoso"]).toMatchObject({
-      attendanceRate: 0,
+    expect(sacramentAptitude({ average: 15, attendanceRate: 0, missing: [] })).toEqual({
       eligible: false,
       reasons: ["Média 15,0", "Presença 0% (abaixo de 75%)"],
     });
@@ -321,8 +326,8 @@ describe("Celebrações dos sacramentos", () => {
     });
   });
 
-  it("lista as turmas do ano: o nível candidato primeiro e as já escolhidas", async () => {
-    const { klass: other } = await classWith("COMMUNION_1", "A", [{ name: "Zé Pequeno" }]);
+  it("lista só as turmas finais do sacramento, e a turma inteira leva só os aptos", async () => {
+    await classWith("COMMUNION_1", "A", [{ name: "Zé Pequeno" }]);
     const { klass } = await classWith("COMMUNION_3", "B", [
       { name: "Ana Apta", grade: 14 },
       { name: "Beto Baixo", grade: 8 },
@@ -340,31 +345,15 @@ describe("Celebrações dos sacramentos", () => {
         members: 2,
         eligible: 1,
         isCandidateLevel: true,
+        special: false,
+        sacrament: null,
+        audience: null,
         takenBy: { celebrationId: celebration.id, date: "2027-05-30" },
       },
-      {
-        id: other.id,
-        label: "Comunhão · 1.º ano · A",
-        level: "COMMUNION_1",
-        members: 1,
-        eligible: 0,
-        isCandidateLevel: false,
-        takenBy: null,
-      },
     ]);
-    // A turma de outro nível pode ir inteira (MANUAL).
-    const extra = await create({
-      date: "2027-06-06",
-      selection: { classIds: [other.id], catechumenIds: [] },
-    });
-    const [person] = (await ctx.sacraments.participants.execute({ id: extra.id })).items;
-    expect(person).toMatchObject({ fullName: "Zé Pequeno", source: "CLASS", eligible: false });
-    expect(
-      (await ctx.sacraments.participants.execute({ id: celebration.id, filter: "READY" })).items,
-    ).toHaveLength(2);
-    expect(
-      (await ctx.sacraments.participants.execute({ id: celebration.id, search: "beto" })).items,
-    ).toHaveLength(1);
+    const participants = (await ctx.sacraments.participants.execute({ id: celebration.id })).items;
+    expect(participants).toHaveLength(1);
+    expect(participants[0]).toMatchObject({ fullName: "Ana Apta", source: "CLASS", eligible: true });
   });
 
   it("a repartição por turmas equilibra e é determinística", () => {

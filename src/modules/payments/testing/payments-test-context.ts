@@ -84,6 +84,7 @@ export function createPaymentsTestContext() {
         catechumenName: "Inês Francisco",
         purpose,
         payerAccountIds: [IDS.guardian],
+        centerId: "a1000000-0000-4000-8000-000000000001",
       });
       return (await payments.findByEnrollmentId(IDS.enrollment))!;
     },

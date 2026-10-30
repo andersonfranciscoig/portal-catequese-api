@@ -71,6 +71,7 @@ describe("Administração das contas", () => {
       actorId: adminId,
       accountId: userId,
       permissions: ["COORDINATION", "FINANCE"],
+      coordinationCenterId: "a1000000-0000-4000-8000-000000000001",
     });
     expect(view.permissions).toEqual(["COORDINATION", "FINANCE"]);
     expect(ctx.activity.entries.at(-1)).toMatchObject({

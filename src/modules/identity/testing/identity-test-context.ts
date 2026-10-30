@@ -18,7 +18,13 @@ import { GetAccountUseCase } from "../application/use-cases/admin/get-account.us
 import { GrantBetaAccessByContactUseCase } from "../application/use-cases/admin/grant-beta-access-by-contact.use-case.js";
 import { ListAccountsUseCase } from "../application/use-cases/admin/list-accounts.use-case.js";
 import { ListCatechistApplicationsUseCase } from "../application/use-cases/admin/list-catechist-applications.use-case.js";
+import { CoordinationCenterLookup } from "../application/ports/coordination-center-lookup.js";
 import { SetAccountPermissionsUseCase } from "../application/use-cases/admin/set-account-permissions.use-case.js";
+import {
+  SANTA_TERESINHA_CENTER_ID,
+  SANTO_EXPEDITO_CENTER_ID,
+  SEDE_CENTER_ID,
+} from "../../../shared/domain/parish-centers.js";
 import { SetBetaAccessUseCase } from "../application/use-cases/admin/set-beta-access.use-case.js";
 import { SetAccountRolesUseCase } from "../application/use-cases/admin/set-account-roles.use-case.js";
 import { UnblockAccountUseCase } from "../application/use-cases/admin/unblock-account.use-case.js";
@@ -62,6 +68,7 @@ export function createIdentityTestContext() {
   });
   const policy = new SignInPolicy(launch);
   const challenges = new InMemoryEmailChallenges(clock);
+  const centers = new InMemoryCoordinationCenterLookup();
   const register = new RegisterAccountUseCase(
     accounts,
     hasher,
@@ -72,6 +79,7 @@ export function createIdentityTestContext() {
     clock,
     notifier,
     mailer,
+    centers,
   );
 
   /** Cria diretamente uma conta (ex.: a administração inicial). */
@@ -83,6 +91,7 @@ export function createIdentityTestContext() {
     permissions?: Permission[];
     betaAccess?: boolean;
     password?: string;
+    centerId?: string;
   }) {
     const account = Account.register({
       roles: options.roles ?? ["GUARDIAN"],
@@ -92,6 +101,7 @@ export function createIdentityTestContext() {
       passwordHash: `hashed:${options.password ?? "catequese1"}`,
       permissions: options.permissions,
       betaAccess: options.betaAccess,
+      centerId: options.centerId ?? SEDE_CENTER_ID,
       now: clock.now(),
     });
     account.pullEvents();
@@ -111,6 +121,7 @@ export function createIdentityTestContext() {
     launch,
     clock,
     seedAccount,
+    centers,
     register,
     requestRegistration: new RequestRegistrationUseCase(
       accounts,
@@ -118,6 +129,7 @@ export function createIdentityTestContext() {
       policy,
       challenges,
       mailer,
+      centers,
     ),
     confirmRegistration: new ConfirmRegistrationUseCase(challenges, register),
     requestPasswordReset: new RequestPasswordResetUseCase(accounts, challenges, mailer),
@@ -133,11 +145,11 @@ export function createIdentityTestContext() {
     listAccounts: new ListAccountsUseCase(accounts),
     getAccount: new GetAccountUseCase(accounts),
     stats: new GetAccountStatsUseCase(accounts),
-    setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock, notifier),
+    setPermissions: new SetAccountPermissionsUseCase(accounts, activity, clock, notifier, centers),
     block: new BlockAccountUseCase(accounts, sessions, activity, clock),
     unblock: new UnblockAccountUseCase(accounts, activity, clock, notifier),
     catechistApplications: new ListCatechistApplicationsUseCase(accounts),
-    decideCatechist: new DecideCatechistUseCase(accounts, activity, clock, notifier),
+    decideCatechist: new DecideCatechistUseCase(accounts, activity, clock, notifier, centers),
     setBetaAccess: new SetBetaAccessUseCase(accounts, activity, clock),
     grantBetaByContact: new GrantBetaAccessByContactUseCase(accounts, clock),
     directory: new AccountDirectoryService(accounts),
@@ -150,4 +162,21 @@ export const guardianInput = {
   phone: "923 482 117",
   email: "Anderson.Francisco@Gmail.com",
   password: "catequese1",
+  centerId: SEDE_CENTER_ID,
 };
+
+class InMemoryCoordinationCenterLookup extends CoordinationCenterLookup {
+  readonly inactive = new Set<string>();
+
+  async exists(id: string) {
+    return (await this.status(id)) !== null;
+  }
+
+  async status(id: string) {
+    if (this.inactive.has(id)) return "INACTIVE";
+    if ([SEDE_CENTER_ID, SANTA_TERESINHA_CENTER_ID, SANTO_EXPEDITO_CENTER_ID].includes(id)) {
+      return "ACTIVE";
+    }
+    return null;
+  }
+}

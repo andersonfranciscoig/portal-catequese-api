@@ -15,6 +15,8 @@ export interface PersonSnapshot {
   catechistApproval?: "PENDING" | "APPROVED" | "REJECTED";
   /** Quando a conta foi criada (ISO). */
   createdAt: string;
+  /** Centro da catequese desta pessoa. */
+  centerId?: string;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, UseGuards } from "@nestjs/common";
+import { Controller, Get, Header, Param, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiTags } from "@nestjs/swagger";
 
 import { csvResponse } from "../../../../shared/presentation/http/csv.js";
@@ -18,6 +18,7 @@ import {
   type ReportExport,
 } from "../../application/use-cases/coordination/reports.use-cases.js";
 import { reportExportParam } from "./catechesis.schemas.js";
+import { listedCenter, scopeOf } from "./http-center.js";
 
 /** Coordenação: indicadores do ano e listas para exportar (os pagamentos pedem o financeiro). */
 @ApiTags("Coordenação — relatórios")
@@ -33,8 +34,11 @@ export class CoordinationReportsController {
 
   @Get()
   @ApiOperation({ summary: "Indicadores do ano (os pagamentos só com acesso ao financeiro)" })
-  getReport(@CurrentAccount() actor: AccessTokenClaims) {
-    return this.report.execute({ canSeeFinance: actor.permissions.includes(Permission.FINANCE) });
+  getReport(@CurrentAccount() actor: AccessTokenClaims, @Query("centerId") centerId?: string) {
+    return this.report.execute({
+      canSeeFinance: actor.permissions.includes(Permission.FINANCE),
+      centerId: listedCenter(scopeOf(actor), centerId),
+    });
   }
 
   @Get("exports/:kind")
@@ -45,11 +49,13 @@ export class CoordinationReportsController {
   async export(
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("kind", new ZodValidationPipe(reportExportParam)) kind: ReportExport,
+    @Query("centerId") centerId?: string,
   ) {
     return csvResponse(
       await this.exportReport.execute({
         kind,
         canSeeFinance: actor.permissions.includes(Permission.FINANCE),
+        centerId: listedCenter(scopeOf(actor), centerId),
       }),
     );
   }

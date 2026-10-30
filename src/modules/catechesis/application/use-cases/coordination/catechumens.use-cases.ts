@@ -11,6 +11,8 @@ import {
   type SessionSlot,
   type YearOutcome,
 } from "../../../domain/catechesis.js";
+import { centerRef } from "../../../domain/center.js";
+import { assertSameCenter, matchesCenter, type CenterScope } from "../../center-scope.js";
 import { attendanceTotals } from "../../../domain/class-attendance.js";
 import {
   CalendarNotDefinedError,
@@ -38,6 +40,7 @@ export interface CatechumenRowView {
   enrollmentCode: string;
   classLabel?: string;
   guardianName?: string;
+  center: { id: string; name: string };
 }
 
 export interface CatechumenListQuery {
@@ -47,6 +50,7 @@ export interface CatechumenListQuery {
   status?: EnrollmentStatus;
   page: number;
   pageSize: number;
+  centerId?: string;
 }
 
 const normalize = (value: string) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -65,7 +69,9 @@ export class ListCatechumensUseCase {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
     const enrollments = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter(
-      (item) => (query.status ? item.status === query.status : item.status !== "REJECTED"),
+      (item) =>
+        matchesCenter(item.centerId, query.centerId) &&
+        (query.status ? item.status === query.status : item.status !== "REJECTED"),
     );
     const [catechumens, classes] = await Promise.all([
       this.catechumens.findByIds(enrollments.map((item) => item.catechumenId)),
@@ -101,6 +107,7 @@ export class ListCatechumensUseCase {
             guardianName: catechumen.guardianAccountId
               ? guardians.get(catechumen.guardianAccountId)
               : undefined,
+            center: centerRef(enrollment.centerId),
           },
         ];
       })
@@ -176,9 +183,16 @@ export class GetCatechumenFileUseCase {
     private readonly records: SacramentRecordRepository,
   ) {}
 
-  async execute({ catechumenId }: { catechumenId: string }): Promise<CatechumenFileView> {
+  async execute({
+    catechumenId,
+    scope,
+  }: {
+    catechumenId: string;
+    scope?: CenterScope;
+  }): Promise<CatechumenFileView> {
     const catechumen = await this.catechumens.findById(UniqueId.from(catechumenId));
     if (!catechumen) throw new CatechumenNotFoundError();
+    assertSameCenter(scope, catechumen.centerId);
     const [calendar, enrollments] = await Promise.all([
       this.calendars.get(),
       this.enrollments.listForCatechumens([catechumenId]),

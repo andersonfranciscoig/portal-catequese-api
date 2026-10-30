@@ -28,4 +28,6 @@ export interface EnrollmentSubmittedEvent extends DomainEvent {
   readonly purpose: "ENROLLMENT" | "CONFIRMATION";
   /** Quem paga e acompanha: o encarregado e/ou o próprio adulto. */
   readonly payerAccountIds: string[];
+  /** Centro da matrícula (o pagamento fica nesse centro). */
+  readonly centerId: string;
 }

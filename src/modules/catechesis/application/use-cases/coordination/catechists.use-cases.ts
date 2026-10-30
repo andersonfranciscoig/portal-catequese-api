@@ -4,6 +4,7 @@ import type {
   PersonSnapshot,
 } from "../../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../../shared/domain/clock.js";
+import { centerRef, SEDE_CENTER_ID } from "../../../domain/center.js";
 import type { CatechesisLevel, SessionSlot } from "../../../domain/catechesis.js";
 import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import {
@@ -13,15 +14,18 @@ import {
 } from "../../../domain/catechist-records.js";
 import {
   CalendarNotDefinedError,
+  CenterForbiddenError,
   NotAnApprovedCatechistError,
 } from "../../../domain/errors/catechesis.errors.js";
 import type {
   CalendarRepository,
   CatechistPresenceRepository,
   CatechistProfileRepository,
+  CenterRepository,
   ClassRepository,
   EnrollmentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { assertSameCenter, resolveWriteCenter, type CenterScope } from "../../center-scope.js";
 
 export interface CatechistClassRefView {
   id: string;
@@ -45,6 +49,7 @@ export interface CatechistRowView {
   currentClass?: CatechistClassRefView;
   /** Presença do catequista nos encontros com registo (%). */
   attendanceRate?: number;
+  center: { id: string; name: string };
 }
 
 export interface CatechistProfileView extends CatechistRowView {
@@ -101,6 +106,9 @@ export class CatechistDirectory {
         return {
           ...this.base(person),
           status: catechistStatus(profileOf.get(person.id), Boolean(klass)),
+          center: centerRef(
+            profileOf.get(person.id)?.centerId ?? person.centerId ?? SEDE_CENTER_ID,
+          ),
           currentClass: klass ? await this.ref(klass, person.id) : undefined,
           attendanceRate: records.length
             ? Math.round(
@@ -126,7 +134,11 @@ export class CatechistDirectory {
       byYear.set(klass.catecheticalYear, [...(byYear.get(klass.catecheticalYear) ?? []), ref]);
     }
     return {
-      ...(row ?? { ...this.base(person), status: "AVAILABLE" as const }),
+      ...(row ?? {
+        ...this.base(person),
+        status: "AVAILABLE" as const,
+        center: centerRef(person.centerId ?? SEDE_CENTER_ID),
+      }),
       timeline: [...byYear.entries()]
         .sort(([a], [b]) => b.localeCompare(a))
         .map(([catecheticalYear, refs]) => ({
@@ -165,9 +177,18 @@ const TAB_STATUS: Record<CatechistTab, CatechistStatus | null> = {
 export class ListCatechistsUseCase {
   constructor(private readonly directory: CatechistDirectory) {}
 
-  async execute({ tab = "todos", search = "" }: { tab?: CatechistTab; search?: string }) {
+  async execute({
+    tab = "todos",
+    search = "",
+    centerId,
+  }: {
+    tab?: CatechistTab;
+    search?: string;
+    centerId?: string;
+  }) {
     const query = normalize(search.trim());
     const rows = (await this.directory.rows())
+      .filter((row) => !centerId || row.center.id === centerId)
       .filter(
         (row) =>
           !query || normalize(`${row.fullName} ${row.email ?? ""} ${row.phone}`).includes(query),
@@ -189,8 +210,10 @@ export class ListCatechistsUseCase {
 export class GetCatechistProfileUseCase {
   constructor(private readonly directory: CatechistDirectory) {}
 
-  execute({ accountId }: { accountId: string }) {
-    return this.directory.profile(accountId);
+  async execute({ accountId, scope }: { accountId: string; scope?: CenterScope }) {
+    const view = await this.directory.profile(accountId);
+    assertSameCenter(scope, view.center.id);
+    return view;
   }
 }
 
@@ -207,22 +230,40 @@ export class SetCatechistStatusUseCase {
     private readonly profiles: CatechistProfileRepository,
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
+    private readonly centers?: CenterRepository,
   ) {}
 
   async execute({
     actorId,
     accountId,
     status,
+    centerId,
+    scope,
   }: {
     actorId: string;
     accountId: string;
     status: ManualCatechistStatus | null;
+    centerId?: string;
+    scope?: CenterScope;
   }): Promise<void> {
     const person = await this.people.find(accountId);
     if (person?.catechistApproval !== "APPROVED") throw new NotAnApprovedCatechistError();
+    const existing = await this.profiles.find(accountId);
+    if (scope?.kind === "center" && existing?.centerId && existing.centerId !== scope.centerId) {
+      throw new CenterForbiddenError();
+    }
+    const resolved =
+      scope || centerId || !existing?.centerId
+        ? await resolveWriteCenter(
+            this.centers,
+            scope,
+            centerId ?? (scope ? undefined : existing?.centerId),
+          )
+        : existing.centerId;
     await this.profiles.save({
       accountId,
       status: status ?? undefined,
+      centerId: resolved || SEDE_CENTER_ID,
       updatedAt: this.clock.now(),
       updatedBy: actorId,
     });

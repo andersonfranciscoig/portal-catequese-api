@@ -70,6 +70,7 @@ import {
   type GenerateClassesBody,
   type PlanClassesQuery,
 } from "./catechesis.schemas.js";
+import { listedCenter, scopeOf } from "./http-center.js";
 
 /** Coordenação: resumo, turmas, catequistas, catequizandos, presenças e prazos. */
 @ApiTags("Coordenação — gestão")
@@ -100,8 +101,8 @@ export class CoordinationManagementController {
 
   @Get("overview")
   @ApiOperation({ summary: "Resumo do ano: números, evolução, distribuição e o que pede atenção" })
-  getOverview() {
-    return this.overview.execute();
+  getOverview(@CurrentAccount() actor: AccessTokenClaims, @Query("centerId") centerId?: string) {
+    return this.overview.execute({ centerId: listedCenter(scopeOf(actor), centerId) });
   }
 
   @Put("calendar/deadlines/:purpose")
@@ -114,22 +115,30 @@ export class CoordinationManagementController {
     purpose: "ENROLLMENT" | "CONFIRMATION",
     @Body(new ZodValidationPipe(deadlineSchema)) body: DeadlineBody,
   ) {
-    return this.setDeadline.execute({ actorId: actor.accountId, purpose, window: body.window });
+    return this.setDeadline.execute({
+      actorId: actor.accountId,
+      purpose,
+      window: body.window,
+      scope: scopeOf(actor),
+    });
   }
 
   /* Turmas */
 
   @Get("years")
   @ApiOperation({ summary: "Anos catequéticos com turmas" })
-  listYears() {
-    return this.years.execute();
+  listYears(@CurrentAccount() actor: AccessTokenClaims, @Query("centerId") centerId?: string) {
+    return this.years.execute({ centerId: listedCenter(scopeOf(actor), centerId) });
   }
 
   @Get("classes/plan")
   @ApiOperation({ summary: "Quantas turmas são precisas num nível" })
   @ApiZodQuery(planClassesSchema)
-  plan(@Query(new ZodValidationPipe(planClassesSchema)) query: PlanClassesQuery) {
-    return this.planClasses.execute(query);
+  plan(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(planClassesSchema)) query: PlanClassesQuery,
+  ) {
+    return this.planClasses.execute({ ...query, scope: scopeOf(actor) });
   }
 
   @Post("classes/generate")
@@ -142,21 +151,21 @@ export class CoordinationManagementController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Body(new ZodValidationPipe(generateClassesSchema)) body: GenerateClassesBody,
   ) {
-    return this.generateClasses.execute({ ...body, actorId: actor.accountId });
+    return this.generateClasses.execute({ ...body, actorId: actor.accountId, scope: scopeOf(actor) });
   }
 
   @Get("classes/:id")
   @ApiOperation({ summary: "Turma: catequizandos e presenças por encontro" })
   @ApiParam({ name: "id", format: "uuid" })
-  classById(@Param("id", ParseUUIDPipe) id: string) {
-    return this.classDetail.execute({ classId: id });
+  classById(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.classDetail.execute({ classId: id, scope: scopeOf(actor) });
   }
 
   @Get("classes/:id/results")
   @ApiOperation({ summary: "Pauta final da turma" })
   @ApiParam({ name: "id", format: "uuid" })
-  results(@Param("id", ParseUUIDPipe) id: string) {
-    return this.classResults.execute({ classId: id });
+  results(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.classResults.execute({ classId: id, scope: scopeOf(actor) });
   }
 
   /* Catequistas */
@@ -164,15 +173,21 @@ export class CoordinationManagementController {
   @Get("catechists")
   @ApiOperation({ summary: "Catequistas aprovados por estado" })
   @ApiZodQuery(catechistListSchema)
-  catechists(@Query(new ZodValidationPipe(catechistListSchema)) query: CatechistListQuery) {
-    return this.listCatechists.execute(query);
+  catechists(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(catechistListSchema)) query: CatechistListQuery,
+  ) {
+    return this.listCatechists.execute({
+      ...query,
+      centerId: listedCenter(scopeOf(actor), query.centerId),
+    });
   }
 
   @Get("catechists/:id")
   @ApiOperation({ summary: "Perfil do catequista com as turmas de cada ano" })
   @ApiParam({ name: "id", format: "uuid" })
-  catechist(@Param("id", ParseUUIDPipe) id: string) {
-    return this.catechistProfile.execute({ accountId: id });
+  catechist(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.catechistProfile.execute({ accountId: id, scope: scopeOf(actor) });
   }
 
   @Put("catechists/:id/status")
@@ -184,12 +199,14 @@ export class CoordinationManagementController {
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(catechistStatusSchema))
-    body: { status: "IN_TRAINING" | "UNAVAILABLE" | "INACTIVE" | null },
+    body: { status: "IN_TRAINING" | "UNAVAILABLE" | "INACTIVE" | null; centerId?: string },
   ) {
     await this.setCatechistStatus.execute({
       actorId: actor.accountId,
       accountId: id,
       status: body.status,
+      centerId: body.centerId,
+      scope: scopeOf(actor),
     });
   }
 
@@ -206,15 +223,24 @@ export class CoordinationManagementController {
   @ApiOperation({
     summary: "Encontros com o prazo da chamada passado e sem chamada (últimos 60 dias)",
   })
-  pendingRolls() {
-    return this.listPendingRolls.execute();
+  pendingRolls(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query("centerId") centerId?: string,
+  ) {
+    return this.listPendingRolls.execute({
+      centerId: listedCenter(scopeOf(actor), centerId),
+    });
   }
 
   @Get("attendance/:date")
   @ApiOperation({ summary: "Turmas de um dia: chamada e presença do catequista" })
   @ApiParam({ name: "date", example: "2026-10-10" })
-  sessionOf(@Param("date", new ZodValidationPipe(sessionDateSchema)) date: string) {
-    return this.session.execute({ date });
+  sessionOf(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Param("date", new ZodValidationPipe(sessionDateSchema)) date: string,
+    @Query("centerId") centerId?: string,
+  ) {
+    return this.session.execute({ date, centerId: listedCenter(scopeOf(actor), centerId) });
   }
 
   @Put("attendance/:date/catechists/:classId")
@@ -233,6 +259,7 @@ export class CoordinationManagementController {
       classId,
       date,
       status: body.status,
+      scope: scopeOf(actor),
     });
   }
 
@@ -241,15 +268,21 @@ export class CoordinationManagementController {
   @Get("catechumens")
   @ApiOperation({ summary: "Catequizandos do ano (pesquisa, etapa, estado, páginas)" })
   @ApiZodQuery(catechumenListSchema)
-  catechumens(@Query(new ZodValidationPipe(catechumenListSchema)) query: CatechumenListQuery) {
-    return this.listCatechumens.execute(query);
+  catechumens(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(catechumenListSchema)) query: CatechumenListQuery,
+  ) {
+    return this.listCatechumens.execute({
+      ...query,
+      centerId: listedCenter(scopeOf(actor), query.centerId),
+    });
   }
 
   @Get("catechumens/:id")
   @ApiOperation({ summary: "Ficha do catequizando: contactos e percurso de todos os anos" })
   @ApiParam({ name: "id", format: "uuid" })
-  catechumen(@Param("id", ParseUUIDPipe) id: string) {
-    return this.catechumenFile.execute({ catechumenId: id });
+  catechumen(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.catechumenFile.execute({ catechumenId: id, scope: scopeOf(actor) });
   }
 
   @Put("catechumens/:id/sacraments/:type")
@@ -270,6 +303,7 @@ export class CoordinationManagementController {
       actorId: actor.accountId,
       catechumenId: id,
       type,
+      scope: scopeOf(actor),
     });
   }
 }

@@ -17,6 +17,12 @@ import {
 import type { CatechesisClass } from "../../../domain/catechesis-class.js";
 import type { Catechumen } from "../../../domain/catechumen.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
+import { centerRef } from "../../../domain/center.js";
+import {
+  assertSameCenter,
+  matchesCenter,
+  type CenterScope,
+} from "../../center-scope.js";
 import {
   CalendarNotDefinedError,
   ClassFullError,
@@ -60,6 +66,7 @@ export interface EnrollmentListQuery {
   sort: "recentes" | "antigas" | "nome";
   page: number;
   pageSize: number;
+  centerId?: string;
 }
 
 export interface EnrollmentRowView {
@@ -76,6 +83,7 @@ export interface EnrollmentRowView {
   guardianName?: string;
   classId?: string;
   classLabel?: string;
+  center: { id: string; name: string };
 }
 
 export interface EnrollmentPageView {
@@ -114,6 +122,7 @@ function toRow(enrollment: Enrollment, ctx: Context): EnrollmentRowView {
       : undefined,
     classId: enrollment.isConfirmed ? enrollment.classId : undefined,
     classLabel: enrollment.isConfirmed && klass ? `Turma ${klass.section}` : undefined,
+    center: centerRef(enrollment.centerId),
   };
 }
 
@@ -130,7 +139,9 @@ export class ListEnrollmentsUseCase {
   async execute(query: EnrollmentListQuery): Promise<EnrollmentPageView> {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const all = await this.enrollments.list({ catecheticalYear: calendar.label });
+    const all = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter((item) =>
+      matchesCenter(item.centerId, query.centerId),
+    );
     const catechumens = new Map(
       (await this.catechumens.findByIds(all.map((item) => item.catechumenId))).map((item) => [
         item.id.value,
@@ -235,14 +246,23 @@ export class GetEnrollmentDetailUseCase {
     private readonly people: PeopleDirectory,
   ) {}
 
-  async execute({ enrollmentId }: { enrollmentId: string }): Promise<EnrollmentDetailView> {
+  async execute({
+    enrollmentId,
+    scope,
+  }: {
+    enrollmentId: string;
+    scope?: CenterScope;
+  }): Promise<EnrollmentDetailView> {
     const enrollment = await this.enrollments.findById(UniqueId.from(enrollmentId));
     if (!enrollment) throw new EnrollmentNotFoundError();
+    assertSameCenter(scope, enrollment.centerId);
     const catechumen = await this.catechumens.findById(UniqueId.from(enrollment.catechumenId));
     if (!catechumen) throw new EnrollmentNotFoundError();
 
     const options = (await this.classes.listByYear(enrollment.catecheticalYear)).filter(
-      (klass) => klass.level === enrollment.level,
+      (klass) =>
+        klass.centerId === enrollment.centerId &&
+        (klass.isSpecial || klass.level === enrollment.level),
     );
     const ids = [
       catechumen.guardianAccountId,
@@ -349,13 +369,16 @@ export class EnrollmentActionUseCase {
     actorId,
     enrollmentId,
     action,
+    scope,
   }: {
     actorId: string;
     enrollmentId: string;
     action: EnrollmentAction;
+    scope?: CenterScope;
   }): Promise<{ status: EnrollmentStatus; classId?: string }> {
     const enrollment = await this.enrollments.findById(UniqueId.from(enrollmentId));
     if (!enrollment) throw new EnrollmentNotFoundError();
+    assertSameCenter(scope, enrollment.centerId);
     const catechumen = await this.catechumens.findById(UniqueId.from(enrollment.catechumenId));
     const name = catechumen?.fullName ?? "—";
     const now = this.clock.now();
@@ -380,11 +403,14 @@ export class EnrollmentActionUseCase {
       case "confirm": {
         const klass = await this.classes.findById(UniqueId.from(action.classId));
         if (!klass) throw new ClassNotFoundError();
-        if (
-          klass.level !== enrollment.level ||
-          klass.catecheticalYear !== enrollment.catecheticalYear
-        ) {
-          throw new InvalidEnrollmentError("A turma tem de ser do mesmo nível e ano da matrícula.");
+        if (klass.catecheticalYear !== enrollment.catecheticalYear) {
+          throw new InvalidEnrollmentError("A turma tem de ser do mesmo ano da matrícula.");
+        }
+        if (!klass.isSpecial && klass.level !== enrollment.level) {
+          throw new InvalidEnrollmentError("A turma tem de ser do mesmo nível da matrícula.");
+        }
+        if (klass.centerId !== enrollment.centerId) {
+          throw new InvalidEnrollmentError("A turma tem de ser do mesmo centro da matrícula.");
         }
         if ((await this.enrollments.countConfirmedInClass(klass.id.value)) >= klass.capacity) {
           throw new ClassFullError();

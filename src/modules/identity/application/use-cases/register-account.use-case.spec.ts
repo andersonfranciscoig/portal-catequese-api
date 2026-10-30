@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { SANTA_TERESINHA_CENTER_ID } from "../../../../shared/domain/parish-centers.js";
 import { createIdentityTestContext, guardianInput } from "../../testing/identity-test-context.js";
 import {
   AccountAlreadyExistsError,
+  CenterInactiveError,
+  CoordinationCenterNotFoundError,
   InvalidPhoneNumberError,
   WeakPasswordError,
 } from "../../domain/errors/identity.errors.js";
@@ -22,6 +25,7 @@ describe("RegisterAccountUseCase", () => {
       phone: "+244923482117",
       email: "anderson.francisco@gmail.com",
       permissions: [],
+      centerId: guardianInput.centerId,
     });
     expect(result.accessToken).toBeTruthy();
     expect(result.refreshToken).toBe("refresh-1");
@@ -77,5 +81,21 @@ describe("RegisterAccountUseCase", () => {
       WeakPasswordError,
     );
     expect(ctx.accounts.items.size).toBe(0);
+  });
+
+  it("grava o centro escolhido", async () => {
+    const { account } = await ctx.register.execute({
+      ...guardianInput,
+      centerId: SANTA_TERESINHA_CENTER_ID,
+    });
+    expect(account.centerId).toBe(SANTA_TERESINHA_CENTER_ID);
+  });
+
+  it("recusa um centro inexistente ou inactivo", async () => {
+    await expect(
+      ctx.register.execute({ ...guardianInput, centerId: "a1000000-0000-4000-8000-000000000099" }),
+    ).rejects.toThrow(CoordinationCenterNotFoundError);
+    ctx.centers.inactive.add(guardianInput.centerId);
+    await expect(ctx.register.execute(guardianInput)).rejects.toThrow(CenterInactiveError);
   });
 });

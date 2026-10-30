@@ -6,6 +6,11 @@ export function classLabel(klass: CatechesisClass): string {
   return `${formatLevel(klass.level)} — Turma ${klass.section}`;
 }
 
+/** "Comunhão · 1.º ano · A" (forma curta, para listas e alertas) */
+export function classShortLabel(klass: Pick<CatechesisClass, "level" | "section">): string {
+  return `${formatLevel(klass.level)} · ${klass.section}`;
+}
+
 /** "Sábado de manhã · 08:00 · Sala 04" */
 export function classSchedule(klass: CatechesisClass): string {
   return [SLOT_LABEL[klass.slot], klass.startTime, klass.room].filter(Boolean).join(" · ");

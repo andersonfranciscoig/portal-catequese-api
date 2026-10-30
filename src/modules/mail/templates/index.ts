@@ -6,3 +6,4 @@ export {
   authWelcome,
 } from "./auth.templates.js";
 export { portalAnnouncement, portalNotification } from "./portal.templates.js";
+export { attendancePendingRollsDigest, attendanceRollReminder } from "./attendance.templates.js";

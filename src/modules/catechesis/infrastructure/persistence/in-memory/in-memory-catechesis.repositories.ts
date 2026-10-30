@@ -9,6 +9,7 @@ import type { ClassAttendance } from "../../../domain/class-attendance.js";
 import type { Enrollment } from "../../../domain/enrollment.js";
 import type { EnrollmentDocument } from "../../../domain/enrollment-document.js";
 import type { Evaluation } from "../../../domain/evaluation.js";
+import type { RollReminder } from "../../../domain/roll-deadline.js";
 import type {
   RequirementCheck,
   SacramentCelebration,
@@ -27,10 +28,38 @@ import {
   type EnrollmentQuery,
   AnnouncementRepository,
   CalendarActivityRepository,
+  RollReminderRepository,
+  SacramentRecordRepository,
   SacramentRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import type { SacramentRecord } from "../../../domain/sacrament-records.js";
 
 /* Repositórios em memória: testes e desenvolvimento sem base de dados. */
+
+export class InMemorySacramentRecordRepository extends SacramentRecordRepository {
+  /** "catequizando|tipo" → registo */
+  readonly items = new Map<string, SacramentRecord>();
+  private all() {
+    return [...this.items.values()].map((item) => structuredClone(item));
+  }
+  async listForCatechumens(catechumenIds: string[]) {
+    return this.all().filter((item) => catechumenIds.includes(item.catechumenId));
+  }
+  async listForCelebration(celebrationId: string) {
+    return this.all().filter((item) => item.celebrationId === celebrationId);
+  }
+  async list(type?: SacramentType) {
+    return this.all().filter((item) => !type || item.type === type);
+  }
+  async save(record: SacramentRecord) {
+    const key = `${record.catechumenId}|${record.type}`;
+    const current = this.items.get(key);
+    this.items.set(key, structuredClone({ ...record, id: current?.id ?? record.id }));
+  }
+  async delete(catechumenId: string, type: SacramentType) {
+    this.items.delete(`${catechumenId}|${type}`);
+  }
+}
 
 export class InMemoryCalendarRepository extends CalendarRepository {
   current: CatecheticalCalendar | null = null;
@@ -154,6 +183,24 @@ export class InMemoryAttendanceRepository extends AttendanceRepository {
   async save(attendance: ClassAttendance) {
     this.sheets.set(`${attendance.classId}|${attendance.date}`, structuredClone(attendance));
   }
+  async listRollDates(classIds: string[], from: string) {
+    return [...this.sheets.values()]
+      .filter((item) => classIds.includes(item.classId) && item.date >= from)
+      .map(({ classId, date }) => ({ classId, date }));
+  }
+}
+
+export class InMemoryRollReminderRepository extends RollReminderRepository {
+  readonly items = new Map<string, RollReminder>();
+  async claim(reminder: RollReminder) {
+    const key = `${reminder.classId}|${reminder.date}`;
+    if (this.items.has(key)) return false;
+    this.items.set(key, { ...reminder });
+    return true;
+  }
+  async listForClasses(classIds: string[]) {
+    return [...this.items.values()].filter((item) => classIds.includes(item.classId));
+  }
 }
 
 export class InMemoryEvaluationRepository extends EvaluationRepository {
@@ -220,17 +267,19 @@ export class InMemorySacramentRepository extends SacramentRepository {
   readonly celebrations = new Map<string, SacramentCelebration>();
   readonly checks = new Map<string, RequirementCheck>();
   async listCelebrations(catecheticalYear: string) {
-    return [...this.celebrations.values()].filter(
-      (item) => item.catecheticalYear === catecheticalYear,
-    );
+    return [...this.celebrations.values()]
+      .filter((item) => item.catecheticalYear === catecheticalYear)
+      .map((item) => structuredClone(item));
+  }
+  async findCelebration(id: string) {
+    const found = this.celebrations.get(id);
+    return found ? structuredClone(found) : null;
   }
   async saveCelebration(celebration: SacramentCelebration) {
-    this.celebrations.set(`${celebration.catecheticalYear}:${celebration.type}`, {
-      ...celebration,
-    });
+    this.celebrations.set(celebration.id, structuredClone(celebration));
   }
-  async deleteCelebration(catecheticalYear: string, type: SacramentType) {
-    this.celebrations.delete(`${catecheticalYear}:${type}`);
+  async deleteCelebration(id: string) {
+    return this.celebrations.delete(id);
   }
   async listChecks(catechumenIds: string[], sacrament: SacramentType) {
     return [...this.checks.values()].filter(

@@ -1,5 +1,10 @@
 import type { AppConfig } from "../../../config/app-config.js";
-import { Mailer, type AnnouncementMail } from "../../../shared/application/mailer.js";
+import {
+  Mailer,
+  type AnnouncementMail,
+  type PendingRollsDigestMail,
+  type RollReminderMail,
+} from "../../../shared/application/mailer.js";
 import * as T from "../templates/index.js";
 import type { MailPort } from "./ports/mail.port.js";
 
@@ -98,6 +103,31 @@ export class MailService extends Mailer {
         linkUrl: input.link ? this.url(input.link) : undefined,
       }),
       "portal.notification",
+    );
+  }
+
+  sendRollReminder(input: RollReminderMail) {
+    this.send(
+      { email: input.email, name: input.firstName },
+      T.attendanceRollReminder(this.brand, {
+        firstName: input.firstName,
+        classLabel: input.classLabel,
+        dayLabel: input.dayLabel,
+        linkUrl: this.url(input.link),
+      }),
+      "attendance.roll-reminder",
+    );
+  }
+
+  sendPendingRollsDigest(input: PendingRollsDigestMail) {
+    this.send(
+      { email: input.email, name: input.firstName },
+      T.attendancePendingRollsDigest(this.brand, {
+        firstName: input.firstName,
+        items: input.items,
+        linkUrl: this.url(input.link),
+      }),
+      "attendance.pending-rolls",
     );
   }
 

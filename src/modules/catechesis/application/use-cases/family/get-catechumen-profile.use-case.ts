@@ -10,7 +10,9 @@ import type {
   CatechumenRepository,
   ClassRepository,
   EnrollmentRepository,
+  SacramentRecordRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { toReceivedViews } from "../../sacrament-records.js";
 import { toClassViews, toEnrollmentView, type CatechumenProfileView } from "../../views.js";
 
 /** Quantas presenças recentes mostrar no perfil. */
@@ -26,6 +28,7 @@ export class GetCatechumenProfileUseCase {
     private readonly calendars: CalendarRepository,
     private readonly people: PeopleDirectory,
     private readonly clock: Clock,
+    private readonly records: SacramentRecordRepository,
   ) {}
 
   async execute({
@@ -64,6 +67,7 @@ export class GetCatechumenProfileUseCase {
       gender: catechumen.gender,
       baptized: catechumen.baptized,
       firstCommunion: catechumen.firstCommunion,
+      sacraments: toReceivedViews(await this.records.listForCatechumens([catechumenId])),
       self: catechumen.accountId === accountId,
       enrollment: toEnrollmentView(enrollment, catechumen.fullName),
       classInfo,

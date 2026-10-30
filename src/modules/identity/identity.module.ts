@@ -3,6 +3,7 @@ import { JwtModule, JwtService } from "@nestjs/jwt";
 
 import { AppConfig } from "../../config/app-config.js";
 import { ActivityRecorder } from "../../shared/application/activity-recorder.js";
+import { ContactDirectory } from "../../shared/application/contact-directory.js";
 import { EventBus } from "../../shared/application/event-bus.js";
 import {
   ACCESS_REQUEST_APPROVED,
@@ -16,6 +17,7 @@ import { Clock } from "../../shared/domain/clock.js";
 import { PrismaService } from "../../shared/infrastructure/database/prisma.service.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
 import { AccountDirectoryService } from "./application/account-directory.service.js";
+import { IdentityContactDirectory } from "./application/identity-contact-directory.js";
 import { IdentityPeopleDirectory } from "./application/identity-people-directory.js";
 import { AccessTokenIssuer } from "./application/ports/access-token-issuer.js";
 import { RefreshTokenGenerator } from "./application/ports/refresh-token-generator.js";
@@ -116,6 +118,11 @@ const AUDIT = ActivityRecorder;
       inject: [AccountRepository],
       useFactory: (accounts: AccountRepository) => new IdentityPeopleDirectory(accounts),
     },
+    {
+      provide: ContactDirectory,
+      inject: [AccountRepository],
+      useFactory: (accounts: AccountRepository) => new IdentityContactDirectory(accounts),
+    },
     // Conta própria
     provideUseCase(RegisterAccountUseCase, [
       AccountRepository,
@@ -195,6 +202,7 @@ const AUDIT = ActivityRecorder;
     AccountRepository,
     AccountDirectoryService,
     PeopleDirectory,
+    ContactDirectory,
   ],
 })
 export class IdentityModule implements OnModuleInit {

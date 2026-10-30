@@ -23,7 +23,9 @@ import type {
   ClassRepository,
   EnrollmentRepository,
   EvaluationRepository,
+  SacramentRecordRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
+import { toReceivedViews, type ReceivedSacramentView } from "../../sacrament-records.js";
 
 export interface CatechumenRowView {
   id: string;
@@ -148,6 +150,8 @@ export interface CatechumenFileView {
   address?: string;
   baptized: boolean;
   firstCommunion: boolean;
+  /** Os três sacramentos, sempre (recebidos ou não), com data e paróquia. */
+  sacraments: ReceivedSacramentView[];
   guardian?: {
     fullName: string;
     phone: string;
@@ -169,6 +173,7 @@ export class GetCatechumenFileUseCase {
     private readonly evaluations: EvaluationRepository,
     private readonly calendars: CalendarRepository,
     private readonly people: PeopleDirectory,
+    private readonly records: SacramentRecordRepository,
   ) {}
 
   async execute({ catechumenId }: { catechumenId: string }): Promise<CatechumenFileView> {
@@ -236,6 +241,7 @@ export class GetCatechumenFileUseCase {
       address: catechumen.address,
       baptized: catechumen.baptized,
       firstCommunion: catechumen.firstCommunion,
+      sacraments: toReceivedViews(await this.records.listForCatechumens([catechumenId])),
       guardian: guardian
         ? {
             fullName: guardian.fullName,

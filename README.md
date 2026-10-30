@@ -179,6 +179,45 @@ Quem é avisado e quando:
 
 Quem fez a ação nunca é notificado dela.
 
+Tempo real e push:
+
+| Método   | Rota                     | Descrição                                                                     |
+| -------- | ------------------------ | ----------------------------------------------------------------------------- |
+| `GET`    | `/me/stream`             | SSE: `message.created`, `conversation.read`, `notification.created`, `: ping` |
+| `GET`    | `/push/vapid-public-key` | chave pública VAPID (pública; `503` se o push estiver desligado)              |
+| `POST`   | `/me/push-subscriptions` | liga o navegador ao push (`endpoint`, `keys`, `userAgent?`)                   |
+| `DELETE` | `/me/push-subscriptions` | desliga o navegador (`endpoint`)                                              |
+
+Cada notificação entregue segue também pelo stream e por push. Para ligar o
+push, gere as chaves VAPID uma vez e ponha-as no `.env`
+(`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT=mailto:…`):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Sem chaves, o push fica desligado (a API avisa no arranque) e o resto funciona.
+
+### Mensagens (`messaging`)
+
+| Método | Rota                             | Descrição                                                    |
+| ------ | -------------------------------- | ------------------------------------------------------------ |
+| `GET`  | `/me/conversations/contacts`     | com quem pode iniciar uma conversa (`search`)                |
+| `GET`  | `/me/conversations`              | conversas, mais recentes primeiro                            |
+| `POST` | `/me/conversations`              | abre (ou devolve) uma conversa (`recipient`)                 |
+| `GET`  | `/me/conversations/unread-count` | quantas conversas têm mensagens por ler                      |
+| `GET`  | `/me/conversations/:id/messages` | mensagens, da mais antiga à mais recente (`before`, `limit`) |
+| `POST` | `/me/conversations/:id/messages` | envia uma mensagem (até 2000 caracteres)                     |
+| `POST` | `/me/conversations/:id/read`     | marca como lida                                              |
+
+Quem pode iniciar uma conversa (relações do ano em curso, matrículas confirmadas
+com turma): encarregado → coordenação e catequistas dos educandos; catequista →
+coordenação, encarregados e catequizandos adultos (com conta) da turma;
+catequizando com conta → coordenação e os seus catequistas; coordenação e
+administração → qualquer conta ativa. A "coordenação" é uma conversa partilhada
+entre a conta e toda a equipa (coordenação e administração); entre membros da
+equipa a conversa é direta.
+
 ### Catequese (`catechesis`)
 
 Portal da família — encarregado (educandos menores) ou adulto (o próprio):

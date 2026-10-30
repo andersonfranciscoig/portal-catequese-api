@@ -30,7 +30,14 @@ export const submitEnrollmentSchema = z.object({
     birthDate: isoDate,
     gender: z.enum(Gender),
     address: optionalText(200),
-    sacraments: z.object({ baptism: z.boolean(), firstCommunion: z.boolean() }),
+    sacraments: z.object({
+      baptism: z.boolean(),
+      firstCommunion: z.boolean(),
+      baptismDate: isoDate.nullable().optional(),
+      baptismParish: z.string().max(120).nullable().optional(),
+      firstCommunionDate: isoDate.nullable().optional(),
+      firstCommunionParish: z.string().max(120).nullable().optional(),
+    }),
   }),
   catechesis: z.object({
     type: z.enum(EnrollmentType),
@@ -213,10 +220,63 @@ export type CandidateListQuery = z.infer<typeof candidateListSchema>;
 export const requirementSchema = z.object({ met: z.boolean() });
 export type RequirementBody = z.infer<typeof requirementSchema>;
 
-export const celebrationSchema = z.object({
-  celebration: z.object({ date: isoDate, place: z.string().trim().min(3).max(120) }).nullable(),
+const celebrationFields = {
+  date: isoDate,
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use o formato HH:mm.")
+    .nullable()
+    .optional(),
+  place: z.string().trim().min(3).max(120),
+  notes: z.string().trim().max(500).nullable().optional(),
+  selection: z.object({
+    classIds: z.array(z.uuid()).max(100),
+    catechumenIds: z.array(z.uuid()).max(1000),
+  }),
+};
+
+export const createCelebrationSchema = z.object({
+  type: z.enum(SacramentType),
+  ...celebrationFields,
 });
-export type CelebrationBody = z.infer<typeof celebrationSchema>;
+export type CreateCelebrationBody = z.infer<typeof createCelebrationSchema>;
+
+export const updateCelebrationSchema = z.object(celebrationFields);
+export type UpdateCelebrationBody = z.infer<typeof updateCelebrationSchema>;
+
+export const classMembersSchema = z.object({ type: z.enum(SacramentType) });
+export type ClassMembersQuery = z.infer<typeof classMembersSchema>;
+
+export const completeCelebrationSchema = z.object({
+  catechumenIds: z.array(z.uuid()).max(1000),
+});
+export type CompleteCelebrationBody = z.infer<typeof completeCelebrationSchema>;
+
+export const receivedSacramentSchema = z.object({
+  received: z.boolean(),
+  date: isoDate.nullable().optional(),
+  parish: z.string().max(120).nullable().optional(),
+});
+export type ReceivedSacramentBody = z.infer<typeof receivedSacramentSchema>;
+
+const recordRange = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+};
+
+export const sacramentRecordsSchema = z.object({
+  type: z.enum(SacramentType).optional(),
+  ...recordRange,
+  search: z.string().trim().max(100).optional(),
+  origin: z.enum(["ALL", "THIS_PARISH", "OTHER"]).default("ALL"),
+  celebrationId: z.uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(50),
+});
+export type SacramentRecordsQuery = z.infer<typeof sacramentRecordsSchema>;
+
+export const sacramentRecordsSummarySchema = z.object(recordRange);
+export type SacramentRecordsSummaryQuery = z.infer<typeof sacramentRecordsSummarySchema>;
 
 /* Relatórios */
 

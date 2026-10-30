@@ -1,4 +1,9 @@
-import { Mailer, type AnnouncementMail } from "../application/mailer.js";
+import {
+  Mailer,
+  type AnnouncementMail,
+  type PendingRollsDigestMail,
+  type RollReminderMail,
+} from "../application/mailer.js";
 
 export class RecordingMailer extends Mailer {
   readonly registerOtps: { email: string; firstName: string; otp: string }[] = [];
@@ -14,9 +19,19 @@ export class RecordingMailer extends Mailer {
   }[] = [];
 
   readonly announcements: AnnouncementMail[] = [];
+  readonly rollReminders: RollReminderMail[] = [];
+  readonly pendingRollsDigests: PendingRollsDigestMail[] = [];
 
   sendAnnouncement(input: AnnouncementMail) {
     this.announcements.push(input);
+  }
+
+  sendRollReminder(input: RollReminderMail) {
+    this.rollReminders.push(input);
+  }
+
+  sendPendingRollsDigest(input: PendingRollsDigestMail) {
+    this.pendingRollsDigests.push(input);
   }
 
   sendRegisterOtp(input: { email: string; firstName: string; otp: string }) {

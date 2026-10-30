@@ -106,7 +106,9 @@ export class CatechistDirectory {
         return {
           ...this.base(person),
           status: catechistStatus(profileOf.get(person.id), Boolean(klass)),
-          center: centerRef(profileOf.get(person.id)?.centerId ?? SEDE_CENTER_ID),
+          center: centerRef(
+            profileOf.get(person.id)?.centerId ?? person.centerId ?? SEDE_CENTER_ID,
+          ),
           currentClass: klass ? await this.ref(klass, person.id) : undefined,
           attendanceRate: records.length
             ? Math.round(
@@ -135,7 +137,7 @@ export class CatechistDirectory {
       ...(row ?? {
         ...this.base(person),
         status: "AVAILABLE" as const,
-        center: centerRef(SEDE_CENTER_ID),
+        center: centerRef(person.centerId ?? SEDE_CENTER_ID),
       }),
       timeline: [...byYear.entries()]
         .sort(([a], [b]) => b.localeCompare(a))
@@ -247,11 +249,7 @@ export class SetCatechistStatusUseCase {
     const person = await this.people.find(accountId);
     if (person?.catechistApproval !== "APPROVED") throw new NotAnApprovedCatechistError();
     const existing = await this.profiles.find(accountId);
-    if (
-      scope?.kind === "center" &&
-      existing?.centerId &&
-      existing.centerId !== scope.centerId
-    ) {
+    if (scope?.kind === "center" && existing?.centerId && existing.centerId !== scope.centerId) {
       throw new CenterForbiddenError();
     }
     const resolved =

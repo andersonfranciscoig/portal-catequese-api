@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { SEDE_CENTER_ID } from "../../../shared/domain/parish-centers.js";
 import { Account } from "./account.js";
 import { AccountApproval, Permission, type AccountRole } from "./account-role.js";
 import { AccountRegistered } from "./events/account-registered.js";
@@ -15,6 +16,7 @@ function register(role: AccountRole, permissions: Permission[] = []) {
     phone: PhoneNumber.create("923610204"),
     passwordHash: "hash",
     permissions,
+    centerId: SEDE_CENTER_ID,
     now,
   });
 }

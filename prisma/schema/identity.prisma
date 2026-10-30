@@ -54,6 +54,8 @@ model Account {
   blockedAt     DateTime?        @map("blocked_at") @db.Timestamptz(3)
   /// Fase de lançamento: aceite como testadora.
   betaAccess           Boolean  @default(false) @map("beta_access")
+  /// Centro da pessoa (sem chave estrangeira entre esquemas).
+  centerId             String   @map("center_id") @db.Uuid
   /// Centro da coordenação (sem chave estrangeira entre esquemas). Nulo = paróquia ou sem coordenação.
   coordinationCenterId String?  @map("coordination_center_id") @db.Uuid
   createdAt            DateTime @map("created_at") @db.Timestamptz(3)

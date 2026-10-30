@@ -160,7 +160,9 @@ export class CoordinationCenterRequiredError extends DomainError {
   readonly kind = "forbidden";
   readonly code = "identity.coordination_center_required";
   constructor() {
-    super("A coordenação deste centro ainda não foi definida. Peça à administração para indicar o centro.");
+    super(
+      "A coordenação deste centro ainda não foi definida. Peça à administração para indicar o centro.",
+    );
   }
 }
 
@@ -169,6 +171,22 @@ export class CoordinationCenterNotFoundError extends DomainError {
   readonly code = "catechesis.center_not_found";
   constructor() {
     super("Centro não encontrado.");
+  }
+}
+
+export class HomeCenterRequiredError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "identity.center_required";
+  constructor() {
+    super("Escolha o centro da catequese.");
+  }
+}
+
+export class CenterInactiveError extends DomainError {
+  readonly kind = "validation";
+  readonly code = "catechesis.center_inactive";
+  constructor() {
+    super("Este centro já não recebe novas contas. Escolha outro.");
   }
 }
 

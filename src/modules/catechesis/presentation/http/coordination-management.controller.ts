@@ -223,9 +223,12 @@ export class CoordinationManagementController {
   @ApiOperation({
     summary: "Encontros com o prazo da chamada passado e sem chamada (últimos 60 dias)",
   })
-  pendingRolls(@CurrentAccount() actor: AccessTokenClaims) {
+  pendingRolls(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query("centerId") centerId?: string,
+  ) {
     return this.listPendingRolls.execute({
-      centerId: listedCenter(scopeOf(actor), undefined),
+      centerId: listedCenter(scopeOf(actor), centerId),
     });
   }
 
@@ -235,8 +238,9 @@ export class CoordinationManagementController {
   sessionOf(
     @CurrentAccount() actor: AccessTokenClaims,
     @Param("date", new ZodValidationPipe(sessionDateSchema)) date: string,
+    @Query("centerId") centerId?: string,
   ) {
-    return this.session.execute({ date, centerId: listedCenter(scopeOf(actor), undefined) });
+    return this.session.execute({ date, centerId: listedCenter(scopeOf(actor), centerId) });
   }
 
   @Put("attendance/:date/catechists/:classId")

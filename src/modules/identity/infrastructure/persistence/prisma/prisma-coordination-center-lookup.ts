@@ -12,8 +12,12 @@ export class PrismaCoordinationCenterLookup extends CoordinationCenterLookup {
   }
 
   async exists(id: string) {
-    if (!UUID.test(id)) return false;
-    const row = await this.prisma.center.findUnique({ where: { id }, select: { id: true } });
-    return row !== null;
+    return (await this.status(id)) !== null;
+  }
+
+  async status(id: string) {
+    if (!UUID.test(id)) return null;
+    const row = await this.prisma.center.findUnique({ where: { id }, select: { status: true } });
+    return row?.status ?? null;
   }
 }

@@ -6,12 +6,16 @@ import { AccountRole } from "../../../domain/account-role.js";
 import { NotACatechistError } from "../../../domain/errors/identity.errors.js";
 import type { AccountRepository } from "../../../domain/repositories/account.repository.js";
 import { toAdminAccountView, type AdminAccountView } from "../../account-view.js";
+import { assertActiveHomeCenter } from "../../home-center.js";
+import type { CoordinationCenterLookup } from "../../ports/coordination-center-lookup.js";
 import { loadCatechistApprover, loadTarget } from "./administrator.js";
 
 export interface DecideCatechistInput {
   actorId: string;
   accountId: string;
   decision: "APPROVED" | "REJECTED";
+  /** Centro do catequista. Se omitido, mantém o do cadastro. */
+  centerId?: string;
 }
 
 /** Aprova ou recusa uma conta de catequista (administração ou coordenação com a permissão). */
@@ -21,17 +25,25 @@ export class DecideCatechistUseCase implements UseCase<DecideCatechistInput, Adm
     private readonly activity: ActivityRecorder,
     private readonly clock: Clock,
     private readonly notifier: Notifier,
+    private readonly centers: CoordinationCenterLookup,
   ) {}
 
-  async execute({ actorId, accountId, decision }: DecideCatechistInput) {
+  async execute({ actorId, accountId, decision, centerId }: DecideCatechistInput) {
     // A administração ou a coordenação com "aprovar catequistas".
     await loadCatechistApprover(this.accounts, actorId);
     const account = await loadTarget(this.accounts, accountId);
     if (!account.hasRole(AccountRole.CATECHIST)) throw new NotACatechistError();
 
     const now = this.clock.now();
-    if (decision === "APPROVED") account.approve(now);
-    else account.reject(now);
+    if (decision === "APPROVED") {
+      if (centerId) {
+        await assertActiveHomeCenter(this.centers, centerId);
+        account.setHomeCenter(centerId, now);
+      }
+      account.approve(now);
+    } else {
+      account.reject(now);
+    }
     await this.accounts.save(account);
     await this.activity.record({
       actorId,

@@ -22,6 +22,7 @@ function toSnapshot(account: Account): PersonSnapshot {
     active: !account.isBlocked,
     catechistApproval: account.hasRole(AccountRole.CATECHIST) ? account.approval : undefined,
     createdAt: account.createdAt.toISOString(),
+    centerId: account.centerId,
   };
 }
 

@@ -68,6 +68,7 @@ async function main() {
           permissions: ["SUPER_ADMIN"],
           status: "ACTIVE",
           betaAccess: true,
+          centerId: "a1000000-0000-4000-8000-000000000001",
           createdAt: now,
           updatedAt: now,
         },

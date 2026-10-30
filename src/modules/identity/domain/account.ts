@@ -34,6 +34,8 @@ export interface AccountProps {
   blockedAt?: Date;
   /** Fase de lançamento: aceite como testadora pela administração. */
   betaAccess: boolean;
+  /** Centro da pessoa. */
+  centerId: string;
   /** Centro da coordenação. Nulo na coordenação geral, no super admin e sem coordenação. */
   coordinationCenterId: string | null;
   createdAt: Date;
@@ -50,6 +52,8 @@ export interface RegisterAccountProps {
   betaAccess?: boolean;
   /** Permissões iniciais (ex.: a primeira conta de administração). */
   permissions?: Permission[];
+  /** Centro da catequese escolhido no cadastro. */
+  centerId: string;
   now: Date;
 }
 
@@ -65,6 +69,7 @@ export class Account extends AggregateRoot<AccountProps> {
       permissions: normalizePermissions(permissions ?? []),
       status: AccountStatus.ACTIVE,
       betaAccess: betaAccess ?? false,
+      centerId: props.centerId,
       coordinationCenterId: null,
       createdAt: now,
       updatedAt: now,
@@ -80,6 +85,7 @@ export class Account extends AggregateRoot<AccountProps> {
         ...props,
         roles: uniqueRoles(props.roles),
         permissions: [...props.permissions],
+        centerId: props.centerId,
         coordinationCenterId: props.coordinationCenterId ?? null,
       },
       id,
@@ -119,6 +125,9 @@ export class Account extends AggregateRoot<AccountProps> {
   }
   get betaAccess() {
     return this.props.betaAccess;
+  }
+  get centerId() {
+    return this.props.centerId;
   }
   get coordinationCenterId() {
     return this.props.coordinationCenterId;
@@ -176,6 +185,11 @@ export class Account extends AggregateRoot<AccountProps> {
   /** Substitui as permissões (as da coordenação caem se a coordenação sair). */
   setPermissions(permissions: Permission[], now: Date): void {
     this.props.permissions = normalizePermissions(permissions);
+    this.props.updatedAt = now;
+  }
+
+  setHomeCenter(centerId: string, now: Date): void {
+    this.props.centerId = centerId;
     this.props.updatedAt = now;
   }
 

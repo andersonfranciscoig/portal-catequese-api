@@ -4,7 +4,7 @@ import { Center, CenterStatus, type CenterView } from "../../domain/center.js";
 import { CenterNotFoundError } from "../../domain/errors/catechesis.errors.js";
 import type { CenterRepository } from "../../domain/repositories/catechesis.repositories.js";
 
-/** Centros ativos (qualquer conta autenticada). */
+/** Centros ativos (cadastro público e qualquer conta). */
 export class ListActiveCentersUseCase {
   constructor(private readonly centers: CenterRepository) {}
 

@@ -7,6 +7,7 @@ export type RegisterChallengePayload = {
   email: string;
   passwordHash: string;
   betaAccess: boolean;
+  centerId: string;
 };
 
 export type PasswordResetPayload = {

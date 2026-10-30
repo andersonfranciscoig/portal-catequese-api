@@ -16,6 +16,8 @@ import { Email } from "../../domain/value-objects/email.js";
 import { FullName } from "../../domain/value-objects/full-name.js";
 import { Password } from "../../domain/value-objects/password.js";
 import { PhoneNumber } from "../../domain/value-objects/phone-number.js";
+import { assertActiveHomeCenter } from "../home-center.js";
+import type { CoordinationCenterLookup } from "../ports/coordination-center-lookup.js";
 import { ROLE_LABEL } from "../role-label.js";
 import type { AuthResult, SessionIssuer } from "../session-issuer.js";
 import type { SignInPolicy } from "../sign-in-policy.js";
@@ -28,6 +30,8 @@ export interface RegisterAccountInput {
   password?: string;
   /** Já calculado (confirmação do OTP). */
   passwordHash?: string;
+  /** Centro da catequese. */
+  centerId: string;
   userAgent?: string;
 }
 
@@ -46,6 +50,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
     private readonly clock: Clock,
     private readonly notifier: Notifier,
     private readonly mailer: Mailer,
+    private readonly centers: CoordinationCenterLookup,
   ) {}
 
   async execute(input: RegisterAccountInput): Promise<AuthResult> {
@@ -53,6 +58,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
     const phone = PhoneNumber.create(input.phone);
     if (!input.email?.trim()) throw new EmailRequiredError();
     const email = Email.create(input.email);
+    await assertActiveHomeCenter(this.centers, input.centerId);
     const passwordHash =
       input.passwordHash ?? (await this.hasher.hash(Password.create(input.password ?? "")));
 
@@ -70,6 +76,7 @@ export class RegisterAccountUseCase implements UseCase<RegisterAccountInput, Aut
       email,
       passwordHash,
       betaAccess,
+      centerId: input.centerId,
       now: this.clock.now(),
     });
     await this.accounts.save(account);

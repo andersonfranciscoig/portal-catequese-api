@@ -10,7 +10,9 @@ import { Email } from "../../domain/value-objects/email.js";
 import { FullName } from "../../domain/value-objects/full-name.js";
 import { Password } from "../../domain/value-objects/password.js";
 import { PhoneNumber } from "../../domain/value-objects/phone-number.js";
+import { assertActiveHomeCenter } from "../home-center.js";
 import type { EmailChallenges } from "../ports/email-challenges.js";
+import type { CoordinationCenterLookup } from "../ports/coordination-center-lookup.js";
 import type { RegisterAccountInput } from "./register-account.use-case.js";
 import type { SignInPolicy } from "../sign-in-policy.js";
 
@@ -33,6 +35,7 @@ export class RequestRegistrationUseCase implements UseCase<
     private readonly policy: SignInPolicy,
     private readonly challenges: EmailChallenges,
     private readonly mailer: Mailer,
+    private readonly centers: CoordinationCenterLookup,
   ) {}
 
   async execute(input: RegisterAccountInput): Promise<RequestRegistrationResult> {
@@ -40,6 +43,7 @@ export class RequestRegistrationUseCase implements UseCase<
     const phone = PhoneNumber.create(input.phone);
     if (!input.email?.trim()) throw new EmailRequiredError();
     const email = Email.create(input.email);
+    await assertActiveHomeCenter(this.centers, input.centerId);
     const password = Password.create(input.password ?? "");
 
     const [byPhone, byEmail] = await Promise.all([
@@ -56,6 +60,7 @@ export class RequestRegistrationUseCase implements UseCase<
       email: email.value,
       passwordHash: await this.hasher.hash(password),
       betaAccess,
+      centerId: input.centerId,
     });
 
     this.mailer.sendRegisterOtp({

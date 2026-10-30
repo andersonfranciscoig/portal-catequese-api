@@ -26,6 +26,7 @@ export class ConfirmRegistrationUseCase implements UseCase<ConfirmRegistrationIn
       phone: payload.phone,
       email: payload.email,
       passwordHash: payload.passwordHash,
+      centerId: payload.centerId,
       userAgent: input.userAgent,
     });
   }

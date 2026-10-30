@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 
@@ -32,15 +41,16 @@ const updateSchema = z
     location: z.string().trim().min(2).max(160).optional(),
     status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   })
-  .refine((body) => body.name !== undefined || body.location !== undefined || body.status !== undefined, {
-    message: "Indique o que quer alterar.",
-  });
+  .refine(
+    (body) => body.name !== undefined || body.location !== undefined || body.status !== undefined,
+    {
+      message: "Indique o que quer alterar.",
+    },
+  );
 
-/** Centros ativos, para qualquer conta com sessão. */
+/** Centros ativos. Público: o cadastro precisa da lista antes da sessão. */
 @ApiTags("Centros")
-@ApiBearerAuth()
 @Controller("centers")
-@UseGuards(AuthGuard)
 export class CentersController {
   constructor(private readonly listActive: ListActiveCentersUseCase) {}
 

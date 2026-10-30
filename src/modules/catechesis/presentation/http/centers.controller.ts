@@ -6,16 +6,20 @@ import { ApiZodBody } from "../../../../shared/presentation/http/api-zod.js";
 import { ZodValidationPipe } from "../../../../shared/presentation/http/zod-validation.pipe.js";
 import {
   AuthGuard,
+  CurrentAccount,
   Permission,
   PermissionsGuard,
   RequirePermissions,
+  type AccessTokenClaims,
 } from "../../../identity/index.js";
 import {
   CreateCenterUseCase,
   ListActiveCentersUseCase,
   ListCentersUseCase,
+  ListScopedCentersUseCase,
   UpdateCenterUseCase,
 } from "../../application/use-cases/centers.use-cases.js";
+import { scopeOf } from "./http-center.js";
 
 const createSchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -44,6 +48,22 @@ export class CentersController {
   @ApiOperation({ summary: "Centros de catequese ativos" })
   list() {
     return this.listActive.execute();
+  }
+}
+
+/** Leitura para o filtro da coordenação: a geral vê inativos; um centro só vê o seu. */
+@ApiTags("Coordenação — centros")
+@ApiBearerAuth()
+@Controller("coordination/centers")
+@UseGuards(AuthGuard, PermissionsGuard)
+@RequirePermissions(Permission.COORDINATION)
+export class CoordinationCentersController {
+  constructor(private readonly listScoped: ListScopedCentersUseCase) {}
+
+  @Get()
+  @ApiOperation({ summary: "Centros visíveis nesta coordenação, inclusive inativos" })
+  list(@CurrentAccount() account: AccessTokenClaims) {
+    return this.listScoped.execute(scopeOf(account));
   }
 }
 

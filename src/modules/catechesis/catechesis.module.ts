@@ -76,12 +76,14 @@ import {
   CreateCenterUseCase,
   ListActiveCentersUseCase,
   ListCentersUseCase,
+  ListScopedCentersUseCase,
   UpdateCenterUseCase,
 } from "./application/use-cases/centers.use-cases.js";
 import { PrismaCenterRepository } from "./infrastructure/persistence/prisma/prisma-center.repository.js";
 import {
   AdminCentersController,
   CentersController,
+  CoordinationCentersController,
 } from "./presentation/http/centers.controller.js";
 import {
   CompleteCelebrationUseCase,
@@ -220,6 +222,7 @@ const RECORDS = SacramentRecordRepository;
     CoordinationCalendarActivitiesController,
     PublicCatechesisController,
     CentersController,
+    CoordinationCentersController,
     AdminCentersController,
   ],
   providers: [
@@ -242,6 +245,7 @@ const RECORDS = SacramentRecordRepository;
     { provide: CenterRepository, useClass: PrismaCenterRepository },
     provideUseCase(ListActiveCentersUseCase, [CenterRepository]),
     provideUseCase(ListCentersUseCase, [CenterRepository]),
+    provideUseCase(ListScopedCentersUseCase, [CenterRepository]),
     provideUseCase(CreateCenterUseCase, [CenterRepository, Clock]),
     provideUseCase(UpdateCenterUseCase, [CenterRepository, Clock]),
     RateLimitGuard,

@@ -14,6 +14,7 @@ import { CenterStatus } from "../domain/center.js";
 import {
   CreateCenterUseCase,
   ListActiveCentersUseCase,
+  ListScopedCentersUseCase,
   UpdateCenterUseCase,
 } from "./use-cases/centers.use-cases.js";
 import { createCatechesisTestContext, IDS } from "../testing/catechesis-test-context.js";
@@ -68,6 +69,15 @@ describe("Centros de catequese", () => {
     expect(updated).toMatchObject({ name: "Capela de Capalanga", status: "INACTIVE" });
     const { items } = await new ListActiveCentersUseCase(ctx.centers).execute();
     expect(items.some((item) => item.id === created.id)).toBe(false);
+    const parish = await new ListScopedCentersUseCase(ctx.centers).execute({ kind: "parish" });
+    expect(parish.items.some((item) => item.id === created.id && item.status === "INACTIVE")).toBe(
+      true,
+    );
+    const sede = await new ListScopedCentersUseCase(ctx.centers).execute({
+      kind: "center",
+      centerId: SEDE_CENTER_ID,
+    });
+    expect(sede.items.map((item) => item.id)).toEqual([SEDE_CENTER_ID]);
   });
 
   it("um centro inativo recusa uma turma nova e um centro inexistente também", async () => {

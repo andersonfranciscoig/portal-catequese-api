@@ -1,4 +1,5 @@
 import type { Clock } from "../../../../shared/domain/clock.js";
+import type { CenterScope } from "../center-scope.js";
 import { Center, CenterStatus, type CenterView } from "../../domain/center.js";
 import { CenterNotFoundError } from "../../domain/errors/catechesis.errors.js";
 import type { CenterRepository } from "../../domain/repositories/catechesis.repositories.js";
@@ -9,6 +10,21 @@ export class ListActiveCentersUseCase {
 
   async execute(): Promise<{ items: CenterView[] }> {
     return { items: (await this.centers.list(CenterStatus.ACTIVE)).map((item) => item.toView()) };
+  }
+}
+
+/**
+ * Centros que a coordenação pode filtrar.
+ * A paróquia vê todos, inclusive inativos. Um centro só vê o seu.
+ */
+export class ListScopedCentersUseCase {
+  constructor(private readonly centers: CenterRepository) {}
+
+  async execute(scope: CenterScope): Promise<{ items: CenterView[] }> {
+    const items = await this.centers.list();
+    const visible =
+      scope.kind === "parish" ? items : items.filter((item) => item.id.value === scope.centerId);
+    return { items: visible.map((item) => item.toView()) };
   }
 }
 

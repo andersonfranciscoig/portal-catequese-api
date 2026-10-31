@@ -140,6 +140,8 @@ model Center {
   profiles      CatechistProfile[]
   celebrations  SacramentCelebration[]
   announcements Announcement[]
+  transfersFrom CenterTransferRequest[] @relation("TransferFrom")
+  transfersTo   CenterTransferRequest[] @relation("TransferTo")
 
   @@map("centers")
   @@schema("catechesis")
@@ -577,5 +579,57 @@ model CalendarActivity {
 
   @@index([startsOn])
   @@map("calendar_activities")
+  @@schema("catechesis")
+}
+
+enum CenterTransferKind {
+  CATECHUMEN
+  CATECHIST
+
+  @@schema("catechesis")
+}
+
+enum CenterTransferStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+
+  @@schema("catechesis")
+}
+
+/// Pedido para passar a frequentar outro centro da mesma paróquia.
+/// A matrícula e a confirmação ficam no centro onde foram feitas.
+model CenterTransferRequest {
+  id                 String                @id @db.Uuid
+  kind               CenterTransferKind
+  status             CenterTransferStatus
+  requestedBy        String                @map("requested_by") @db.Uuid
+  fromCenterId       String                @map("from_center_id") @db.Uuid
+  toCenterId         String                @map("to_center_id") @db.Uuid
+  reason             String
+  catechumenId       String?               @map("catechumen_id") @db.Uuid
+  enrollmentId       String?               @map("enrollment_id") @db.Uuid
+  fromClassId        String?               @map("from_class_id") @db.Uuid
+  fromLevel          CatechesisLevel?      @map("from_level")
+  toClassId          String?               @map("to_class_id") @db.Uuid
+  catechistAccountId String?               @map("catechist_account_id") @db.Uuid
+  catechistRole      ClassCatechistRole?   @map("catechist_role")
+  requestedAt        DateTime              @map("requested_at") @db.Timestamptz(3)
+  decidedAt          DateTime?             @map("decided_at") @db.Timestamptz(3)
+  decidedBy          String?               @map("decided_by") @db.Uuid
+  decisionNote       String?               @map("decision_note")
+  createdAt          DateTime              @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @map("updated_at") @db.Timestamptz(3)
+
+  fromCenter Center @relation("TransferFrom", fields: [fromCenterId], references: [id])
+  toCenter   Center @relation("TransferTo", fields: [toCenterId], references: [id])
+
+  @@index([status, toCenterId])
+  @@index([status, fromCenterId])
+  @@index([requestedBy])
+  @@index([catechumenId])
+  @@index([catechistAccountId])
+  @@map("center_transfer_requests")
   @@schema("catechesis")
 }

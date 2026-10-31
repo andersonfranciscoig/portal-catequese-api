@@ -118,6 +118,8 @@ export interface ClassMemberView {
   id: string;
   fullName: string;
   birthDate: string;
+  /** Veio de outro centro neste ano. */
+  fromCenter?: { id: string; name: string };
 }
 
 export interface RollSessionView {
@@ -149,9 +151,18 @@ export interface EvaluationRowView extends ClassMemberView {
   suggested?: YearOutcome;
 }
 
+export interface OriginStayView {
+  fromCenter: { id: string; name: string };
+  fromClass?: { id: string; section: string; slot?: SessionSlot; startTime?: string };
+  attendanceRate?: number;
+  reason: string;
+  decidedAt: string;
+}
+
 export interface CatechumenFileView extends EvaluationRowView {
   attendance: AttendanceEntry[];
   guardian?: { fullName: string; relationship?: GuardianRelationship; phone: string };
+  originStay?: OriginStayView;
 }
 
 /* ───────────── Montagem ───────────── */

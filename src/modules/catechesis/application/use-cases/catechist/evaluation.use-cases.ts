@@ -18,9 +18,12 @@ import {
 } from "../../../domain/evaluation.js";
 import type {
   AttendanceRepository,
+  CenterTransferRepository,
+  ClassRepository,
   EvaluationRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 import type { CatechistClass, CatechistClassResolver } from "../../catechist-class.js";
+import { originStayOf } from "../center-transfers.use-cases.js";
 import { toMemberView, type CatechumenFileView, type EvaluationRowView } from "../../views.js";
 
 /** Presenças de cada catequizando da turma (a partir das chamadas lançadas). */
@@ -136,6 +139,8 @@ export class GetClassCatechumenUseCase {
     private readonly attendance: AttendanceRepository,
     private readonly evaluations: EvaluationRepository,
     private readonly people: PeopleDirectory,
+    private readonly transfers: CenterTransferRepository,
+    private readonly classes: ClassRepository,
   ) {}
 
   async execute({
@@ -148,12 +153,14 @@ export class GetClassCatechumenUseCase {
     const found = await this.resolver.require(accountId);
     const member = found.members.find((item) => item.id.equals(UniqueId.from(catechumenId)));
     if (!member) throw new CatechumenNotFoundError();
-    const [entries, evaluations, guardian] = await Promise.all([
+    const [entries, evaluations, guardian, moves] = await Promise.all([
       this.attendance.listForCatechumen(found.klass.id.value, catechumenId),
       this.evaluations.listForClass(found.klass.id.value),
       member.guardianAccountId ? this.people.find(member.guardianAccountId) : null,
+      this.transfers.list({ status: "APPROVED", catechumenId }),
     ]);
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    const arrival = moves[0];
     return {
       ...toRow(
         member,
@@ -167,6 +174,9 @@ export class GetClassCatechumenUseCase {
             relationship: member.guardianRelationship,
             phone: guardian.phone,
           }
+        : undefined,
+      originStay: arrival
+        ? await originStayOf(arrival, this.classes, this.attendance, catechumenId)
         : undefined,
     };
   }

@@ -12,3 +12,4 @@ export { AuthGuard } from "./presentation/http/guards/auth.guard.js";
 export { PermissionsGuard } from "./presentation/http/guards/permissions.guard.js";
 export { RequirePermissions } from "./presentation/http/decorators/require-permissions.decorator.js";
 export { CurrentAccount } from "./presentation/http/decorators/current-account.decorator.js";
+export { AccountRepository } from "./domain/repositories/account.repository.js";

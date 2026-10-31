@@ -98,6 +98,7 @@ import {
   InMemoryAnnouncementRepository,
   InMemoryCenterRepository,
   InMemoryCalendarActivityRepository,
+  InMemoryCenterTransferRepository,
   InMemoryAttendanceRepository,
   InMemoryCalendarRepository,
   InMemoryCatechistPresenceRepository,
@@ -239,6 +240,7 @@ export function createCatechesisTestContext() {
   // Terça-feira, 13 de outubro de 2026.
   const clock = new FixedClock();
   const centers = new InMemoryCenterRepository();
+  const transfers = new InMemoryCenterTransferRepository();
   for (const center of Center.seeded(clock.now())) void centers.save(center);
   const sacramentRecords = new SacramentRecords(recordRepository, clock);
   let next = 0;
@@ -329,12 +331,12 @@ export function createCatechesisTestContext() {
       sacramentRecords,
       centers,
     ),
-    myClass: new GetMyClassUseCase(resolver, attendance, people),
+    myClass: new GetMyClassUseCase(resolver, attendance, people, transfers),
     roll: new GetRollUseCase(resolver, attendance),
     saveRoll: new SaveRollUseCase(resolver, attendance, activity, clock, notifier),
     getEvaluations: new GetEvaluationsUseCase(resolver, attendance, evaluations),
     saveEvaluations: new SaveEvaluationsUseCase(resolver, attendance, evaluations, activity, clock),
-    file: new GetClassCatechumenUseCase(resolver, attendance, evaluations, people),
+    file: new GetClassCatechumenUseCase(resolver, attendance, evaluations, people, transfers, classes),
     listClasses: new ListClassesUseCase(classes, enrollments, calendars, people, clock),
     createClass: new CreateClassUseCase(classes, calendars, people, activity, clock, centers),
     assign: new AssignCatechistsUseCase(
@@ -427,6 +429,7 @@ export function createCatechesisTestContext() {
       classes,
       calendars,
       people,
+      transfers,
     ),
     catechumenFile: new GetCatechumenFileUseCase(
       catechumens,
@@ -437,6 +440,7 @@ export function createCatechesisTestContext() {
       calendars,
       people,
       recordRepository,
+      transfers,
     ),
     setReceivedSacrament: new SetReceivedSacramentUseCase(catechumens, sacramentRecords, activity),
     setCatechistStatus: new SetCatechistStatusUseCase(people, profiles, activity, clock, centers),

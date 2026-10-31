@@ -402,7 +402,9 @@ export const requestCenterTransferSchema = z.discriminatedUnion("kind", [
 export type RequestCenterTransferBody = z.infer<typeof requestCenterTransferSchema>;
 
 export const coordinationTransfersSchema = z.object({
-  status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
+  status: z
+    .enum(["ORIGIN_REVIEW", "DESTINATION_REVIEW", "APPROVED", "REJECTED", "CANCELLED"])
+    .optional(),
 });
 export type CoordinationTransfersQuery = z.infer<typeof coordinationTransfersSchema>;
 

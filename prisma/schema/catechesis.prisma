@@ -590,7 +590,8 @@ enum CenterTransferKind {
 }
 
 enum CenterTransferStatus {
-  PENDING
+  ORIGIN_REVIEW
+  DESTINATION_REVIEW
   APPROVED
   REJECTED
   CANCELLED
@@ -600,6 +601,7 @@ enum CenterTransferStatus {
 
 /// Pedido para passar a frequentar outro centro da mesma paróquia.
 /// A matrícula e a confirmação ficam no centro onde foram feitas.
+/// Fluxo: origem analisa → destino aceita.
 model CenterTransferRequest {
   id                 String                @id @db.Uuid
   kind               CenterTransferKind
@@ -616,6 +618,9 @@ model CenterTransferRequest {
   catechistAccountId String?               @map("catechist_account_id") @db.Uuid
   catechistRole      ClassCatechistRole?   @map("catechist_role")
   requestedAt        DateTime              @map("requested_at") @db.Timestamptz(3)
+  originReviewedAt   DateTime?             @map("origin_reviewed_at") @db.Timestamptz(3)
+  originReviewedBy   String?               @map("origin_reviewed_by") @db.Uuid
+  originNote         String?               @map("origin_note")
   decidedAt          DateTime?             @map("decided_at") @db.Timestamptz(3)
   decidedBy          String?               @map("decided_by") @db.Uuid
   decisionNote       String?               @map("decision_note")

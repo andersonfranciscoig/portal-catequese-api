@@ -1,5 +1,6 @@
 import type { UniqueId } from "../../../../shared/domain/unique-id.js";
 import type { Center, CenterStatus } from "../center.js";
+import type { CenterTransferRequest, CenterTransferStatus } from "../center-transfer.js";
 import type { Announcement } from "../announcement.js";
 import type { CalendarActivity } from "../calendar-activity.js";
 import type { CatecheticalCalendar } from "../catechetical-calendar.js";
@@ -178,4 +179,19 @@ export abstract class CalendarActivityRepository {
   abstract findById(id: UniqueId): Promise<CalendarActivity | null>;
   abstract save(activity: CalendarActivity): Promise<void>;
   abstract delete(id: UniqueId): Promise<boolean>;
+}
+
+export interface CenterTransferQuery {
+  status?: CenterTransferStatus;
+  requestedBy?: string;
+  catechumenId?: string;
+  catechistAccountId?: string;
+  fromCenterId?: string;
+  toCenterId?: string;
+}
+
+export abstract class CenterTransferRepository {
+  abstract findById(id: UniqueId): Promise<CenterTransferRequest | null>;
+  abstract list(query?: CenterTransferQuery): Promise<CenterTransferRequest[]>;
+  abstract save(request: CenterTransferRequest): Promise<void>;
 }

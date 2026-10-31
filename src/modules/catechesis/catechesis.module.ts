@@ -10,7 +10,7 @@ import { PaymentsLedger } from "../../shared/application/payments-ledger.js";
 import { PeopleDirectory } from "../../shared/application/people-directory.js";
 import { Clock } from "../../shared/domain/clock.js";
 import { provideUseCase } from "../../shared/infrastructure/provide.js";
-import { IdentityModule } from "../identity/index.js";
+import { AccountRepository, IdentityModule } from "../identity/index.js";
 import { PaymentsModule } from "../payments/index.js";
 import { CatechesisAccess } from "./application/catechesis-access.js";
 import { CatechistClassResolver } from "./application/catechist-class.js";
@@ -60,6 +60,7 @@ import {
   CalendarActivityRepository,
   CalendarRepository,
   CenterRepository,
+  CenterTransferRepository,
   CatechistPresenceRepository,
   CatechistProfileRepository,
   CatechumenRepository,
@@ -79,7 +80,16 @@ import {
   ListScopedCentersUseCase,
   UpdateCenterUseCase,
 } from "./application/use-cases/centers.use-cases.js";
+import {
+  CancelCenterTransferUseCase,
+  DecideCenterTransferUseCase,
+  GetCenterTransferUseCase,
+  ListCoordinationCenterTransfersUseCase,
+  ListMyCenterTransfersUseCase,
+  RequestCenterTransferUseCase,
+} from "./application/use-cases/center-transfers.use-cases.js";
 import { PrismaCenterRepository } from "./infrastructure/persistence/prisma/prisma-center.repository.js";
+import { PrismaCenterTransferRepository } from "./infrastructure/persistence/prisma/prisma-center-transfer.repository.js";
 import {
   AdminCentersController,
   CentersController,
@@ -243,6 +253,7 @@ const RECORDS = SacramentRecordRepository;
     { provide: REMINDERS, useClass: PrismaRollReminderRepository },
     { provide: RECORDS, useClass: PrismaSacramentRecordRepository },
     { provide: CenterRepository, useClass: PrismaCenterRepository },
+    { provide: CenterTransferRepository, useClass: PrismaCenterTransferRepository },
     provideUseCase(ListActiveCentersUseCase, [CenterRepository]),
     provideUseCase(ListCentersUseCase, [CenterRepository]),
     provideUseCase(ListScopedCentersUseCase, [CenterRepository]),
@@ -327,12 +338,19 @@ const RECORDS = SacramentRecordRepository;
       CenterRepository,
     ]),
     // Catequista
-    provideUseCase(GetMyClassUseCase, [RESOLVER, ATTENDANCE, PEOPLE]),
+    provideUseCase(GetMyClassUseCase, [RESOLVER, ATTENDANCE, PEOPLE, CenterTransferRepository]),
     provideUseCase(GetRollUseCase, [RESOLVER, ATTENDANCE]),
     provideUseCase(SaveRollUseCase, [RESOLVER, ATTENDANCE, AUDIT, Clock, Notifier]),
     provideUseCase(GetEvaluationsUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS]),
     provideUseCase(SaveEvaluationsUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS, AUDIT, Clock]),
-    provideUseCase(GetClassCatechumenUseCase, [RESOLVER, ATTENDANCE, EVALUATIONS, PEOPLE]),
+    provideUseCase(GetClassCatechumenUseCase, [
+      RESOLVER,
+      ATTENDANCE,
+      EVALUATIONS,
+      PEOPLE,
+      CenterTransferRepository,
+      CLASSES,
+    ]),
     // Coordenação
     provideUseCase(GetCalendarUseCase, [CALENDAR]),
     provideUseCase(SetCalendarUseCase, [CALENDAR, AUDIT, Clock]),
@@ -395,7 +413,14 @@ const RECORDS = SacramentRecordRepository;
       Notifier,
       CoordinationMessenger,
     ]),
-    provideUseCase(ListCatechumensUseCase, [ENROLLMENTS, CATECHUMENS, CLASSES, CALENDAR, PEOPLE]),
+    provideUseCase(ListCatechumensUseCase, [
+      ENROLLMENTS,
+      CATECHUMENS,
+      CLASSES,
+      CALENDAR,
+      PEOPLE,
+      CenterTransferRepository,
+    ]),
     provideUseCase(GetCatechumenFileUseCase, [
       CATECHUMENS,
       ENROLLMENTS,
@@ -405,6 +430,55 @@ const RECORDS = SacramentRecordRepository;
       CALENDAR,
       PEOPLE,
       RECORDS,
+      CenterTransferRepository,
+    ]),
+    provideUseCase(RequestCenterTransferUseCase, [
+      CatechesisAccess,
+      CenterTransferRepository,
+      CATECHUMENS,
+      ENROLLMENTS,
+      CLASSES,
+      CALENDAR,
+      CenterRepository,
+      PROFILES,
+      PEOPLE,
+      AUDIT,
+      Clock,
+      Notifier,
+    ]),
+    provideUseCase(ListMyCenterTransfersUseCase, [
+      CenterTransferRepository,
+      PEOPLE,
+      CATECHUMENS,
+      CLASSES,
+    ]),
+    provideUseCase(CancelCenterTransferUseCase, [CenterTransferRepository, Clock, AUDIT]),
+    provideUseCase(ListCoordinationCenterTransfersUseCase, [
+      CenterTransferRepository,
+      PEOPLE,
+      CATECHUMENS,
+      CLASSES,
+    ]),
+    provideUseCase(GetCenterTransferUseCase, [
+      CenterTransferRepository,
+      ENROLLMENTS,
+      CLASSES,
+      CALENDAR,
+      PEOPLE,
+      CATECHUMENS,
+    ]),
+    provideUseCase(DecideCenterTransferUseCase, [
+      CenterTransferRepository,
+      CATECHUMENS,
+      ENROLLMENTS,
+      CLASSES,
+      CALENDAR,
+      PROFILES,
+      AccountRepository,
+      PEOPLE,
+      AUDIT,
+      Clock,
+      Notifier,
     ]),
     provideUseCase(GetOverviewUseCase, [
       ENROLLMENTS,

@@ -31,6 +31,11 @@ import {
   ConfirmEnrollmentUseCase,
   ListMyConfirmationsUseCase,
 } from "../../application/use-cases/family/confirmations.use-cases.js";
+import {
+  CancelCenterTransferUseCase,
+  ListMyCenterTransfersUseCase,
+  RequestCenterTransferUseCase,
+} from "../../application/use-cases/center-transfers.use-cases.js";
 import { GetCatechumenProfileUseCase } from "../../application/use-cases/family/get-catechumen-profile.use-case.js";
 import { GetFamilyUseCase } from "../../application/use-cases/family/get-family.use-case.js";
 import { SubmitEnrollmentUseCase } from "../../application/use-cases/family/submit-enrollment.use-case.js";
@@ -41,9 +46,11 @@ import {
   documentKindSchema,
   myAnnouncementsSchema,
   portalRoleSchema,
+  requestCenterTransferSchema,
   submitEnrollmentSchema,
   type ConfirmBody,
   type MyAnnouncementsQuery,
+  type RequestCenterTransferBody,
   type SubmitEnrollmentBody,
 } from "./catechesis.schemas.js";
 
@@ -64,6 +71,9 @@ export class FamilyController {
     private readonly confirm: ConfirmEnrollmentUseCase,
     private readonly announcements: ListMyAnnouncementsUseCase,
     private readonly calendar: ListPortalCalendarUseCase,
+    private readonly requestTransfer: RequestCenterTransferUseCase,
+    private readonly myTransfers: ListMyCenterTransfersUseCase,
+    private readonly cancelTransfer: CancelCenterTransferUseCase,
   ) {}
 
   @Get("family")
@@ -177,5 +187,31 @@ export class FamilyController {
     @Body(new ZodValidationPipe(confirmSchema)) body: ConfirmBody,
   ) {
     return this.confirm.execute({ ...body, actorId: account.accountId });
+  }
+
+  @Get("center-transfers")
+  @ApiOperation({ summary: "Pedidos de mudança de centro da própria conta" })
+  myCenterTransfers(@CurrentAccount() account: AccessTokenClaims) {
+    return this.myTransfers.execute({ accountId: account.accountId });
+  }
+
+  @Post("center-transfers")
+  @ApiOperation({ summary: "Pede para passar a frequentar outro centro da paróquia" })
+  @ApiZodBody(requestCenterTransferSchema)
+  requestCenterTransfer(
+    @CurrentAccount() account: AccessTokenClaims,
+    @Body(new ZodValidationPipe(requestCenterTransferSchema)) body: RequestCenterTransferBody,
+  ) {
+    return this.requestTransfer.execute({ ...body, accountId: account.accountId });
+  }
+
+  @Post("center-transfers/:id/cancel")
+  @ApiOperation({ summary: "Cancela um pedido de mudança de centro ainda pendente" })
+  @ApiParam({ name: "id", format: "uuid" })
+  cancelCenterTransfer(
+    @CurrentAccount() account: AccessTokenClaims,
+    @Param("id", ParseUUIDPipe) id: string,
+  ) {
+    return this.cancelTransfer.execute({ accountId: account.accountId, id });
   }
 }

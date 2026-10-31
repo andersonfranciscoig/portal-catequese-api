@@ -385,3 +385,31 @@ export const calendarActivitySchema = z
     path: ["endsOn"],
   });
 export type CalendarActivityBody = z.infer<typeof calendarActivitySchema>;
+
+export const requestCenterTransferSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("CATECHUMEN"),
+    catechumenId: z.uuid(),
+    toCenterId: z.uuid(),
+    reason: z.string().trim().min(10).max(500),
+  }),
+  z.object({
+    kind: z.literal("CATECHIST"),
+    toCenterId: z.uuid(),
+    reason: z.string().trim().min(10).max(500),
+  }),
+]);
+export type RequestCenterTransferBody = z.infer<typeof requestCenterTransferSchema>;
+
+export const coordinationTransfersSchema = z.object({
+  status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
+});
+export type CoordinationTransfersQuery = z.infer<typeof coordinationTransfersSchema>;
+
+export const decideCenterTransferSchema = z.object({
+  decision: z.enum(["APPROVED", "REJECTED"]),
+  classId: z.uuid().optional(),
+  role: z.enum(ClassCatechistRole).optional(),
+  note: optionalText(400),
+});
+export type DecideCenterTransferBody = z.infer<typeof decideCenterTransferSchema>;

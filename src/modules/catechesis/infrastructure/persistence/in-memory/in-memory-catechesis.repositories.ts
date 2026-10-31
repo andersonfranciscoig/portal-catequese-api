@@ -1,5 +1,6 @@
 import type { UniqueId } from "../../../../../shared/domain/unique-id.js";
 import { rememberCenterName, SEDE_CENTER_ID, type Center } from "../../../domain/center.js";
+import type { CenterTransferRequest } from "../../../domain/center-transfer.js";
 import type { Announcement } from "../../../domain/announcement.js";
 import type { CalendarActivity } from "../../../domain/calendar-activity.js";
 import type { CatecheticalCalendar } from "../../../domain/catechetical-calendar.js";
@@ -30,6 +31,8 @@ import {
   type EnrollmentQuery,
   AnnouncementRepository,
   CalendarActivityRepository,
+  CenterTransferRepository,
+  type CenterTransferQuery,
   RollReminderRepository,
   SacramentRecordRepository,
   SacramentRepository,
@@ -385,5 +388,31 @@ export class InMemoryCalendarActivityRepository extends CalendarActivityReposito
 
   async delete(id: UniqueId) {
     return this.items.delete(id.value);
+  }
+}
+
+export class InMemoryCenterTransferRepository extends CenterTransferRepository {
+  readonly items = new Map<string, CenterTransferRequest>();
+
+  async findById(id: UniqueId) {
+    return this.items.get(id.value) ?? null;
+  }
+
+  async list(query: CenterTransferQuery = {}) {
+    return [...this.items.values()]
+      .filter(
+        (item) =>
+          (!query.status || item.status === query.status) &&
+          (!query.requestedBy || item.requestedBy === query.requestedBy) &&
+          (!query.catechumenId || item.catechumenId === query.catechumenId) &&
+          (!query.catechistAccountId || item.catechistAccountId === query.catechistAccountId) &&
+          (!query.fromCenterId || item.fromCenterId === query.fromCenterId) &&
+          (!query.toCenterId || item.toCenterId === query.toCenterId),
+      )
+      .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
+  }
+
+  async save(request: CenterTransferRequest) {
+    this.items.set(request.id.value, request);
   }
 }

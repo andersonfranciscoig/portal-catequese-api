@@ -200,3 +200,25 @@ export class ReportNotAllowedError extends error(
   "report_not_allowed",
   "Os pagamentos só estão disponíveis para quem tem acesso ao financeiro.",
 ) {}
+
+export class InvalidCenterTransferError extends error("validation", "invalid_center_transfer") {}
+export class CenterTransferNotFoundError extends error(
+  "not_found",
+  "center_transfer_not_found",
+  "Pedido de mudança de centro não encontrado.",
+) {}
+export class CenterTransferAlreadyOpenError extends error(
+  "conflict",
+  "center_transfer_already_open",
+  "Já existe um pedido de mudança de centro à espera de decisão.",
+) {}
+export class CenterTransferAlreadyDecidedError extends error(
+  "conflict",
+  "center_transfer_already_decided",
+  "Este pedido já foi decidido ou cancelado.",
+) {}
+export class NoCenterVacancyError extends error(
+  "conflict",
+  "no_center_vacancy",
+  "Não há vaga neste centro para o mesmo ano e o mesmo nível.",
+) {}

@@ -254,6 +254,24 @@ export class Enrollment extends AggregateRoot<EnrollmentProps> {
     });
   }
 
+  /**
+   * Passa a frequentar outra turma. O centro da matrícula não muda: o
+   * registo fica onde a inscrição foi feita.
+   */
+  changeClass(classId: string, actorId: string, now: Date, note?: string) {
+    if (this.props.status !== S.CONFIRMED) {
+      throw new InvalidEnrollmentError("Só se muda de turma uma matrícula confirmada.");
+    }
+    this.props.classId = classId;
+    this.props.updatedAt = now;
+    this.props.history.push({
+      status: S.CONFIRMED,
+      at: now,
+      actorId,
+      note: note?.trim() || undefined,
+    });
+  }
+
   private move(
     status: EnrollmentStatus,
     from: EnrollmentStatus[],

@@ -47,6 +47,11 @@ import {
   GenerateClassesUseCase,
   PlanClassesUseCase,
 } from "../../application/use-cases/coordination/class-generation.use-cases.js";
+import {
+  DecideCenterTransferUseCase,
+  GetCenterTransferUseCase,
+  ListCoordinationCenterTransfersUseCase,
+} from "../../application/use-cases/center-transfers.use-cases.js";
 import { GetOverviewUseCase } from "../../application/use-cases/coordination/overview.use-case.js";
 import { ListPendingRollsUseCase } from "../../application/use-cases/coordination/roll-reminders.use-cases.js";
 import { SetReceivedSacramentUseCase } from "../../application/use-cases/coordination/sacrament-records.use-cases.js";
@@ -69,6 +74,10 @@ import {
   type DeadlineBody,
   type GenerateClassesBody,
   type PlanClassesQuery,
+  coordinationTransfersSchema,
+  decideCenterTransferSchema,
+  type CoordinationTransfersQuery,
+  type DecideCenterTransferBody,
 } from "./catechesis.schemas.js";
 import { listedCenter, scopeOf } from "./http-center.js";
 
@@ -97,6 +106,9 @@ export class CoordinationManagementController {
     private readonly catechumenFile: GetCatechumenFileUseCase,
     private readonly listPendingRolls: ListPendingRollsUseCase,
     private readonly setReceivedSacrament: SetReceivedSacramentUseCase,
+    private readonly listTransfers: ListCoordinationCenterTransfersUseCase,
+    private readonly getTransfer: GetCenterTransferUseCase,
+    private readonly decideTransfer: DecideCenterTransferUseCase,
   ) {}
 
   @Get("overview")
@@ -303,6 +315,40 @@ export class CoordinationManagementController {
       actorId: actor.accountId,
       catechumenId: id,
       type,
+      scope: scopeOf(actor),
+    });
+  }
+
+  @Get("center-transfers")
+  @ApiOperation({ summary: "Pedidos de mudança de centro (entradas e saídas do âmbito)" })
+  @ApiZodQuery(coordinationTransfersSchema)
+  centerTransfers(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Query(new ZodValidationPipe(coordinationTransfersSchema)) query: CoordinationTransfersQuery,
+  ) {
+    return this.listTransfers.execute({ scope: scopeOf(actor), status: query.status });
+  }
+
+  @Get("center-transfers/:id")
+  @ApiOperation({ summary: "Pedido de mudança de centro, com as turmas possíveis" })
+  @ApiParam({ name: "id", format: "uuid" })
+  centerTransfer(@CurrentAccount() actor: AccessTokenClaims, @Param("id", ParseUUIDPipe) id: string) {
+    return this.getTransfer.execute({ id, scope: scopeOf(actor) });
+  }
+
+  @Put("center-transfers/:id/decision")
+  @ApiOperation({ summary: "Aceita ou recusa a mudança de centro" })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiZodBody(decideCenterTransferSchema)
+  decideCenterTransfer(
+    @CurrentAccount() actor: AccessTokenClaims,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(decideCenterTransferSchema)) body: DecideCenterTransferBody,
+  ) {
+    return this.decideTransfer.execute({
+      ...body,
+      actorId: actor.accountId,
+      id,
       scope: scopeOf(actor),
     });
   }

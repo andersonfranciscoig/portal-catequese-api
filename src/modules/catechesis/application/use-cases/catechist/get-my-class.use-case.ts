@@ -1,5 +1,9 @@
 import type { PeopleDirectory } from "../../../../../shared/application/people-directory.js";
-import type { AttendanceRepository } from "../../../domain/repositories/catechesis.repositories.js";
+import { centerRef } from "../../../domain/center.js";
+import type {
+  AttendanceRepository,
+  CenterTransferRepository,
+} from "../../../domain/repositories/catechesis.repositories.js";
 import type { CatechistClassResolver } from "../../catechist-class.js";
 import { toClassViews, toMemberView, type MyClassView } from "../../views.js";
 
@@ -9,6 +13,7 @@ export class GetMyClassUseCase {
     private readonly resolver: CatechistClassResolver,
     private readonly attendance: AttendanceRepository,
     private readonly people: PeopleDirectory,
+    private readonly transfers: CenterTransferRepository,
   ) {}
 
   async execute({ accountId }: { accountId: string }): Promise<MyClassView> {
@@ -36,9 +41,23 @@ export class GetMyClassUseCase {
     return {
       catecheticalYear: calendar.label,
       class: view,
-      members: members.map(toMemberView),
+      members: await this.withOrigins(members.map(toMemberView)),
       sessions,
       nextSessionDate: view.nextSessionDate,
     };
+  }
+
+  private async withOrigins(members: ReturnType<typeof toMemberView>[]) {
+    const arrivals = await this.transfers.list({ status: "APPROVED" });
+    const byCatechumen = new Map<string, string>();
+    for (const item of arrivals) {
+      if (item.kind === "CATECHUMEN" && item.catechumenId && !byCatechumen.has(item.catechumenId)) {
+        byCatechumen.set(item.catechumenId, item.fromCenterId);
+      }
+    }
+    return members.map((member) => {
+      const from = byCatechumen.get(member.id);
+      return from ? { ...member, fromCenter: centerRef(from) } : member;
+    });
   }
 }

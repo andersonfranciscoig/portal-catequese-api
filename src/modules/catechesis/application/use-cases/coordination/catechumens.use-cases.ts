@@ -12,22 +12,25 @@ import {
   type YearOutcome,
 } from "../../../domain/catechesis.js";
 import { centerRef } from "../../../domain/center.js";
-import { assertSameCenter, matchesCenter, type CenterScope } from "../../center-scope.js";
+import { matchesCenter, type CenterScope } from "../../center-scope.js";
 import { attendanceTotals } from "../../../domain/class-attendance.js";
 import {
   CalendarNotDefinedError,
   CatechumenNotFoundError,
+  CenterForbiddenError,
 } from "../../../domain/errors/catechesis.errors.js";
 import type {
   AttendanceRepository,
   CalendarRepository,
   CatechumenRepository,
+  CenterTransferRepository,
   ClassRepository,
   EnrollmentRepository,
   EvaluationRepository,
   SacramentRecordRepository,
 } from "../../../domain/repositories/catechesis.repositories.js";
 import { toReceivedViews, type ReceivedSacramentView } from "../../sacrament-records.js";
+import { originStayOf, type OriginStayView } from "../center-transfers.use-cases.js";
 
 export interface CatechumenRowView {
   id: string;
@@ -41,6 +44,7 @@ export interface CatechumenRowView {
   classLabel?: string;
   guardianName?: string;
   center: { id: string; name: string };
+  fromCenter?: { id: string; name: string };
 }
 
 export interface CatechumenListQuery {
@@ -63,21 +67,38 @@ export class ListCatechumensUseCase {
     private readonly classes: ClassRepository,
     private readonly calendars: CalendarRepository,
     private readonly people: PeopleDirectory,
+    private readonly transfers: CenterTransferRepository,
   ) {}
 
   async execute(query: CatechumenListQuery) {
     const calendar = await this.calendars.get();
     if (!calendar) throw new CalendarNotDefinedError();
-    const enrollments = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter(
-      (item) =>
-        matchesCenter(item.centerId, query.centerId) &&
-        (query.status ? item.status === query.status : item.status !== "REJECTED"),
+    const yearEnrollments = (await this.enrollments.list({ catecheticalYear: calendar.label })).filter(
+      (item) => (query.status ? item.status === query.status : item.status !== "REJECTED"),
     );
-    const [catechumens, classes] = await Promise.all([
-      this.catechumens.findByIds(enrollments.map((item) => item.catechumenId)),
+    const [catechumens, classes, arrivals] = await Promise.all([
+      this.catechumens.findByIds(yearEnrollments.map((item) => item.catechumenId)),
       this.classes.listByYear(calendar.label),
+      this.transfers.list({ status: "APPROVED" }),
     ]);
+    const arrived = new Map<string, (typeof arrivals)[number]>();
+    for (const item of arrivals) {
+      if (item.kind === "CATECHUMEN" && item.catechumenId && !arrived.has(item.catechumenId)) {
+        arrived.set(item.catechumenId, item);
+      }
+    }
     const byId = new Map(catechumens.map((item) => [item.id.value, item]));
+    const enrollments = yearEnrollments.filter((enrollment) => {
+      const catechumen = byId.get(enrollment.catechumenId);
+      const klass = enrollment.classId
+        ? classes.find((item) => item.id.value === enrollment.classId)
+        : undefined;
+      return (
+        matchesCenter(enrollment.centerId, query.centerId) ||
+        (klass ? matchesCenter(klass.centerId, query.centerId) : false) ||
+        (catechumen ? matchesCenter(catechumen.centerId, query.centerId) : false)
+      );
+    });
     const guardians = new Map(
       (
         await this.people.findMany(
@@ -107,7 +128,10 @@ export class ListCatechumensUseCase {
             guardianName: catechumen.guardianAccountId
               ? guardians.get(catechumen.guardianAccountId)
               : undefined,
-            center: centerRef(enrollment.centerId),
+            center: centerRef(klass?.centerId ?? catechumen.centerId),
+            fromCenter: arrived.get(catechumen.id.value)
+              ? centerRef(arrived.get(catechumen.id.value)!.fromCenterId)
+              : undefined,
           },
         ];
       })
@@ -147,6 +171,7 @@ export interface JourneyYearView {
   attendanceRate?: number;
   outcome?: YearOutcome;
   isCurrent: boolean;
+  originStay?: OriginStayView;
 }
 
 export interface CatechumenFileView {
@@ -181,6 +206,7 @@ export class GetCatechumenFileUseCase {
     private readonly calendars: CalendarRepository,
     private readonly people: PeopleDirectory,
     private readonly records: SacramentRecordRepository,
+    private readonly transfers: CenterTransferRepository,
   ) {}
 
   async execute({
@@ -192,14 +218,26 @@ export class GetCatechumenFileUseCase {
   }): Promise<CatechumenFileView> {
     const catechumen = await this.catechumens.findById(UniqueId.from(catechumenId));
     if (!catechumen) throw new CatechumenNotFoundError();
-    assertSameCenter(scope, catechumen.centerId);
-    const [calendar, enrollments] = await Promise.all([
+    const [calendar, enrollments, moves] = await Promise.all([
       this.calendars.get(),
       this.enrollments.listForCatechumens([catechumenId]),
+      this.transfers.list({ status: "APPROVED", catechumenId }),
     ]);
-    const classes = await this.classes.findByIds(
-      enrollments.flatMap((item) => (item.classId ? [item.classId] : [])),
-    );
+    const arrival = moves[0];
+    const classes = await this.classes.findByIds([
+      ...enrollments.flatMap((item) => (item.classId ? [item.classId] : [])),
+      ...(arrival?.fromClassId ? [arrival.fromClassId] : []),
+    ]);
+    if (scope?.kind === "center") {
+      const visible =
+        catechumen.centerId === scope.centerId ||
+        enrollments.some((item) => item.centerId === scope.centerId) ||
+        classes.some((item) => item.centerId === scope.centerId) ||
+        moves.some(
+          (item) => item.fromCenterId === scope.centerId || item.toCenterId === scope.centerId,
+        );
+      if (!visible) throw new CenterForbiddenError();
+    }
     const people = new Map(
       (
         await this.people.findMany(
@@ -240,6 +278,10 @@ export class GetCatechumenFileUseCase {
             attendanceRate: attendanceTotals(entries).rate,
             outcome: evaluations.find((item) => item.catechumenId === catechumenId)?.outcome,
             isCurrent: enrollment.catecheticalYear === calendar?.label,
+            originStay:
+              enrollment.catecheticalYear === calendar?.label && arrival
+                ? await originStayOf(arrival, this.classes, this.attendance, catechumenId)
+                : undefined,
           };
         }),
     );

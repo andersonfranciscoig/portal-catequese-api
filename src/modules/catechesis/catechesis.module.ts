@@ -452,7 +452,13 @@ const RECORDS = SacramentRecordRepository;
       CATECHUMENS,
       CLASSES,
     ]),
-    provideUseCase(CancelCenterTransferUseCase, [CenterTransferRepository, Clock, AUDIT]),
+    provideUseCase(CancelCenterTransferUseCase, [
+      CenterTransferRepository,
+      Clock,
+      AUDIT,
+      Notifier,
+      PEOPLE,
+    ]),
     provideUseCase(ListCoordinationCenterTransfersUseCase, [
       CenterTransferRepository,
       PEOPLE,

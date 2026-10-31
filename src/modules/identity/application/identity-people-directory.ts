@@ -75,4 +75,19 @@ export class IdentityPeopleDirectory extends PeopleDirectory {
       .filter((account) => account.hasPermission(permission))
       .map((account) => account.id.value);
   }
+
+  async coordinationOfCenter(centerId: string) {
+    const candidates = await this.accounts.findActiveWithAnyPermission([
+      Permission.SUPER_ADMIN,
+      Permission.COORDINATION,
+    ]);
+    return candidates
+      .filter(
+        (account) =>
+          account.hasPermission(Permission.COORDINATION) &&
+          (account.hasPermission(Permission.GENERAL_COORDINATION) ||
+            account.coordinationCenterId === centerId),
+      )
+      .map((account) => account.id.value);
+  }
 }

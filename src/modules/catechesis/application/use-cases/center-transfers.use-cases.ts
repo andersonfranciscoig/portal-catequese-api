@@ -3,10 +3,19 @@ import type { Notifier } from "../../../../shared/application/notifier.js";
 import type { PeopleDirectory } from "../../../../shared/application/people-directory.js";
 import type { Clock } from "../../../../shared/domain/clock.js";
 import { UniqueId } from "../../../../shared/domain/unique-id.js";
-import { AccountRepository } from "../../../identity/index.js";
-import { ClassCatechistRole, type CatechesisLevel, type SessionSlot } from "../../domain/catechesis.js";
+import type { AccountRepository } from "../../../identity/index.js";
+import {
+  ClassCatechistRole,
+  type CatechesisLevel,
+  type SessionSlot,
+} from "../../domain/catechesis.js";
 import type { CatechesisClass } from "../../domain/catechesis-class.js";
-import { CenterTransferRequest, type CenterTransferKind, type CenterTransferStatus } from "../../domain/center-transfer.js";
+import {
+  CenterTransferRequest,
+  OPEN_TRANSFER_STATUSES,
+  type CenterTransferKind,
+  type CenterTransferStatus,
+} from "../../domain/center-transfer.js";
 import { centerRef } from "../../domain/center.js";
 import {
   CalendarNotDefinedError,
@@ -30,7 +39,7 @@ import type {
   ClassRepository,
   EnrollmentRepository,
 } from "../../domain/repositories/catechesis.repositories.js";
-import { CatechesisAccess } from "../catechesis-access.js";
+import type { CatechesisAccess } from "../catechesis-access.js";
 import { type CenterScope } from "../center-scope.js";
 import { attendanceTotals } from "../../domain/class-attendance.js";
 import { classLabel } from "../messages.js";
@@ -53,9 +62,14 @@ export interface CenterTransferView {
   toClass?: { id: string; label: string };
   catechistRole?: ClassCatechistRole;
   requestedAt: string;
+  originReviewedAt?: string;
+  originReviewedBy?: { id: string; fullName: string };
+  originNote?: string;
   decidedAt?: string;
   decidedBy?: { id: string; fullName: string };
   decisionNote?: string;
+  /** Origem analisa, destino aceita, ou só consulta. */
+  decisionStage?: "ORIGIN" | "DESTINATION";
   canDecide: boolean;
   canCancel: boolean;
   options?: TransferOptionsView;
@@ -102,7 +116,11 @@ export interface OriginStayView {
   decidedAt: string;
 }
 
-function canDecide(scope: CenterScope | undefined, toCenterId: string) {
+function canActOnOrigin(scope: CenterScope | undefined, fromCenterId: string) {
+  return !scope || scope.kind === "parish" || scope.centerId === fromCenterId;
+}
+
+function canActOnDestination(scope: CenterScope | undefined, toCenterId: string) {
   return !scope || scope.kind === "parish" || scope.centerId === toCenterId;
 }
 
@@ -111,11 +129,30 @@ function canSee(scope: CenterScope | undefined, request: CenterTransferRequest) 
   return scope.centerId === request.fromCenterId || scope.centerId === request.toCenterId;
 }
 
+/** A coordenação nunca cancela: só quem pediu (na área da família/catequista). */
+function decisionFlags(scope: CenterScope | undefined, request: CenterTransferRequest) {
+  if (request.awaitsOrigin && canActOnOrigin(scope, request.fromCenterId)) {
+    return { canDecide: true, canCancel: false, decisionStage: "ORIGIN" as const };
+  }
+  if (request.awaitsDestination && canActOnDestination(scope, request.toCenterId)) {
+    return { canDecide: true, canCancel: false, decisionStage: "DESTINATION" as const };
+  }
+  return { canDecide: false, canCancel: false, decisionStage: undefined };
+}
+
 function compatibleClass(origin: CatechesisClass | undefined, dest: CatechesisClass) {
   if (!origin) return dest.kind === "REGULAR";
   if (origin.kind !== dest.kind) return false;
   if (origin.kind === "SPECIAL") return origin.sacrament === dest.sacrament;
   return true;
+}
+
+async function hasOpenTransfer(
+  transfers: CenterTransferRepository,
+  query: { catechumenId?: string; catechistAccountId?: string },
+) {
+  const items = await transfers.list(query);
+  return items.some((item) => OPEN_TRANSFER_STATUSES.includes(item.status));
 }
 
 /** Família ou catequista pede para passar a frequentar outro centro. */
@@ -135,11 +172,13 @@ export class RequestCenterTransferUseCase {
     private readonly notifier: Notifier,
   ) {}
 
-  async execute(input: {
-    accountId: string;
-    toCenterId: string;
-    reason: string;
-  } & ({ kind: "CATECHUMEN"; catechumenId: string } | { kind: "CATECHIST" })): Promise<CenterTransferView> {
+  async execute(
+    input: {
+      accountId: string;
+      toCenterId: string;
+      reason: string;
+    } & ({ kind: "CATECHUMEN"; catechumenId: string } | { kind: "CATECHIST" }),
+  ): Promise<CenterTransferView> {
     const destination = await this.centers.findById(input.toCenterId);
     if (!destination) throw new CenterNotFoundError();
     if (!destination.isActive) throw new CenterInactiveError();
@@ -148,26 +187,44 @@ export class RequestCenterTransferUseCase {
     const now = this.clock.now();
     const request =
       input.kind === "CATECHUMEN"
-        ? await this.catechumenRequest(input.accountId, input.catechumenId, input.toCenterId, input.reason, calendar.label, now)
-        : await this.catechistRequest(input.accountId, input.toCenterId, input.reason, calendar.label, now);
+        ? await this.catechumenRequest(
+            input.accountId,
+            input.catechumenId,
+            input.toCenterId,
+            input.reason,
+            calendar.label,
+            now,
+          )
+        : await this.catechistRequest(
+            input.accountId,
+            input.toCenterId,
+            input.reason,
+            calendar.label,
+            now,
+          );
     await this.transfers.save(request);
-    const subject =
-      request.kind === "CATECHUMEN"
-        ? ((await this.catechumens.findById(UniqueId.from(request.catechumenId!)))?.fullName ?? "Catequizando")
-        : ((await this.people.find(request.requestedBy))?.fullName ?? "Catequista");
+    const subject = await subjectName(request, this.people, this.catechumens);
     await this.activity.record({
       actorId: input.accountId,
       category: "CATECHISTS",
       action: "catechesis.center_transfer_requested",
       summary: `${subject} pediu mudança de ${centerRef(request.fromCenterId).name} para ${destination.name}`,
     });
+    // Primeiro passo: só a coordenação do centro de origem (e a geral) é avisada.
     await this.notifier.notify({
-      to: { permission: "COORDINATION" },
+      to: { accountIds: await this.people.coordinationOfCenter(request.fromCenterId) },
       kind: "catechesis.center_transfer_requested",
       title: "Pedido de mudança de centro",
-      body: `${subject} quer passar de ${centerRef(request.fromCenterId).name} para ${destination.name}.`,
+      body: `${subject} quer passar de ${centerRef(request.fromCenterId).name} para ${destination.name}. A coordenação de origem analisa primeiro.`,
       link: "/dashboard/mudancas-centro",
       exceptAccountId: input.accountId,
+    });
+    await this.notifier.notify({
+      to: { accountIds: [input.accountId] },
+      kind: "catechesis.center_transfer_requested",
+      title: "Pedido de mudança enviado",
+      body: `A coordenação de ${centerRef(request.fromCenterId).name} vai analisar o pedido para ${destination.name}.`,
+      link: "/portal",
     });
     return this.toView(request, input.accountId);
   }
@@ -189,9 +246,12 @@ export class RequestCenterTransferUseCase {
         "Só pode pedir mudança de centro com a matrícula deste ano já confirmada.",
       );
     }
-    const open = await this.transfers.list({ status: "PENDING", catechumenId });
-    if (open.length) throw new CenterTransferAlreadyOpenError();
-    const klass = enrollment.classId ? await this.classes.findById(UniqueId.from(enrollment.classId)) : null;
+    if (await hasOpenTransfer(this.transfers, { catechumenId })) {
+      throw new CenterTransferAlreadyOpenError();
+    }
+    const klass = enrollment.classId
+      ? await this.classes.findById(UniqueId.from(enrollment.classId))
+      : null;
     const fromCenterId = klass?.centerId ?? catechumen.centerId;
     return CenterTransferRequest.requestCatechumen({
       requestedBy: accountId,
@@ -214,15 +274,18 @@ export class RequestCenterTransferUseCase {
     now: Date,
   ) {
     await this.access.catechist(accountId);
-    const open = await this.transfers.list({ status: "PENDING", catechistAccountId: accountId });
-    if (open.length) throw new CenterTransferAlreadyOpenError();
+    if (await hasOpenTransfer(this.transfers, { catechistAccountId: accountId })) {
+      throw new CenterTransferAlreadyOpenError();
+    }
     const [klass, profile, person] = await Promise.all([
       this.classes.findForCatechist(accountId, year),
       this.profiles.find(accountId),
       this.people.find(accountId),
     ]);
     const fromCenterId = klass?.centerId ?? profile?.centerId ?? person?.centerId;
-    if (!fromCenterId) throw new InvalidCenterTransferError("Não foi possível identificar o centro atual.");
+    if (!fromCenterId) {
+      throw new InvalidCenterTransferError("Não foi possível identificar o centro atual.");
+    }
     return CenterTransferRequest.requestCatechist({
       requestedBy: accountId,
       fromCenterId,
@@ -234,10 +297,13 @@ export class RequestCenterTransferUseCase {
     });
   }
 
-  private async toView(request: CenterTransferRequest, accountId: string): Promise<CenterTransferView> {
+  private async toView(
+    request: CenterTransferRequest,
+    accountId: string,
+  ): Promise<CenterTransferView> {
     return toTransferView(request, this.people, this.catechumens, this.classes, {
       canDecide: false,
-      canCancel: request.isPending && request.requestedBy === accountId,
+      canCancel: request.isOpen && request.requestedBy === accountId,
     });
   }
 }
@@ -257,24 +323,28 @@ export class ListMyCenterTransfersUseCase {
       items.map((item) =>
         toTransferView(item, this.people, this.catechumens, this.classes, {
           canDecide: false,
-          canCancel: item.isPending,
+          canCancel: item.isOpen,
         }),
       ),
     );
   }
 }
 
-/** A família ou o catequista cancela o pedido enquanto está pendente. */
+/** A família ou o catequista cancela o pedido enquanto está em análise. */
 export class CancelCenterTransferUseCase {
   constructor(
     private readonly transfers: CenterTransferRepository,
     private readonly clock: Clock,
     private readonly activity: ActivityRecorder,
+    private readonly notifier: Notifier,
+    private readonly people: PeopleDirectory,
   ) {}
 
   async execute({ accountId, id }: { accountId: string; id: string }): Promise<void> {
     const request = await this.transfers.findById(UniqueId.from(id));
     if (!request) throw new CenterTransferNotFoundError();
+    // Avisa a coordenação que tinha o pedido em mãos (origem ou destino), lida antes de cancelar.
+    const handlingCenterId = request.awaitsDestination ? request.toCenterId : request.fromCenterId;
     request.cancel(accountId, this.clock.now());
     await this.transfers.save(request);
     await this.activity.record({
@@ -283,10 +353,18 @@ export class CancelCenterTransferUseCase {
       action: "catechesis.center_transfer_cancelled",
       summary: "Cancelou o pedido de mudança de centro",
     });
+    await this.notifier.notify({
+      to: { accountIds: await this.people.coordinationOfCenter(handlingCenterId) },
+      kind: "catechesis.center_transfer_cancelled",
+      title: "Pedido de mudança cancelado",
+      body: `O pedido de ${centerRef(request.fromCenterId).name} para ${centerRef(request.toCenterId).name} foi cancelado.`,
+      link: "/dashboard/mudancas-centro",
+      exceptAccountId: accountId,
+    });
   }
 }
 
-/** Fila da coordenação: entradas no seu centro e saídas. */
+/** Fila da coordenação: saídas (origem) e entradas (destino). */
 export class ListCoordinationCenterTransfersUseCase {
   constructor(
     private readonly transfers: CenterTransferRepository,
@@ -311,16 +389,19 @@ export class ListCoordinationCenterTransfersUseCase {
           ]);
     return Promise.all(
       items.map((item) =>
-        toTransferView(item, this.people, this.catechumens, this.classes, {
-          canDecide: item.isPending && canDecide(scope, item.toCenterId),
-          canCancel: false,
-        }),
+        toTransferView(
+          item,
+          this.people,
+          this.catechumens,
+          this.classes,
+          decisionFlags(scope, item),
+        ),
       ),
     );
   }
 }
 
-/** Detalhe com as turmas possíveis (vagas ou sugestões). */
+/** Detalhe com as turmas possíveis (só na análise do destino). */
 export class GetCenterTransferUseCase {
   constructor(
     private readonly transfers: CenterTransferRepository,
@@ -331,20 +412,17 @@ export class GetCenterTransferUseCase {
     private readonly catechumens: CatechumenRepository,
   ) {}
 
-  async execute({
-    id,
-    scope,
-  }: {
-    id: string;
-    scope?: CenterScope;
-  }): Promise<CenterTransferView> {
+  async execute({ id, scope }: { id: string; scope?: CenterScope }): Promise<CenterTransferView> {
     const request = await this.transfers.findById(UniqueId.from(id));
     if (!request || !canSee(scope, request)) throw new CenterTransferNotFoundError();
-    const view = await toTransferView(request, this.people, this.catechumens, this.classes, {
-      canDecide: request.isPending && canDecide(scope, request.toCenterId),
-      canCancel: false,
-    });
-    if (!request.isPending) return view;
+    const view = await toTransferView(
+      request,
+      this.people,
+      this.catechumens,
+      this.classes,
+      decisionFlags(scope, request),
+    );
+    if (!request.awaitsDestination || !view.canDecide) return view;
     return { ...view, options: await this.options(request) };
   }
 
@@ -365,7 +443,11 @@ export class GetCenterTransferUseCase {
   }
 }
 
-/** A coordenação de destino (ou a geral) aceita ou recusa. */
+/**
+ * Decisão em dois passos:
+ * 1) origem encaminha ou recusa;
+ * 2) destino aceita (com turma) ou recusa.
+ */
 export class DecideCenterTransferUseCase {
   constructor(
     private readonly transfers: CenterTransferRepository,
@@ -392,47 +474,139 @@ export class DecideCenterTransferUseCase {
   }): Promise<CenterTransferView> {
     const request = await this.transfers.findById(UniqueId.from(input.id));
     if (!request || !canSee(input.scope, request)) throw new CenterTransferNotFoundError();
-    if (!canDecide(input.scope, request.toCenterId)) throw new CenterForbiddenError();
+    const flags = decisionFlags(input.scope, request);
+    if (!flags.canDecide) throw new CenterForbiddenError();
     const now = this.clock.now();
-    if (input.decision === "REJECTED") {
-      request.reject(input.actorId, now, input.note);
-    } else if (request.kind === "CATECHUMEN") {
-      await this.approveCatechumen(request, input.actorId, now, input.classId, input.note);
-    } else {
-      await this.approveCatechist(request, input.actorId, now, input.classId, input.role, input.note);
-    }
-    await this.transfers.save(request);
     const subject = await subjectName(request, this.people, this.catechumens);
-    await this.activity.record({
-      actorId: input.actorId,
-      category: "CATECHISTS",
-      action:
-        input.decision === "APPROVED"
-          ? "catechesis.center_transfer_approved"
-          : "catechesis.center_transfer_rejected",
-      summary:
-        input.decision === "APPROVED"
-          ? `Aceitou a mudança de centro de ${subject}`
-          : `Recusou a mudança de centro de ${subject}`,
-    });
-    await this.notifier.notify({
-      to: { accountIds: [request.requestedBy] },
-      kind:
-        input.decision === "APPROVED"
-          ? "catechesis.center_transfer_approved"
-          : "catechesis.center_transfer_rejected",
-      title:
-        input.decision === "APPROVED" ? "Mudança de centro aceite" : "Mudança de centro recusada",
-      body:
-        input.decision === "APPROVED"
-          ? `Já frequenta ${centerRef(request.toCenterId).name}.`
-          : input.note?.trim() || `${subject} continua em ${centerRef(request.fromCenterId).name}.`,
-      link: "/portal",
-      exceptAccountId: input.actorId,
-    });
+
+    if (request.awaitsOrigin) {
+      await this.decideAtOrigin(request, input, now, subject);
+    } else if (request.awaitsDestination) {
+      await this.decideAtDestination(request, input, now, subject);
+    } else {
+      throw new CenterTransferNotFoundError();
+    }
+
+    await this.transfers.save(request);
     return toTransferView(request, this.people, this.catechumens, this.classes, {
       canDecide: false,
       canCancel: false,
+    });
+  }
+
+  private async decideAtOrigin(
+    request: CenterTransferRequest,
+    input: {
+      actorId: string;
+      decision: "APPROVED" | "REJECTED";
+      note?: string;
+    },
+    now: Date,
+    subject: string,
+  ) {
+    if (input.decision === "REJECTED") {
+      request.reject(input.actorId, now, input.note);
+      await this.activity.record({
+        actorId: input.actorId,
+        category: "CATECHISTS",
+        action: "catechesis.center_transfer_rejected",
+        summary: `A coordenação de origem recusou a mudança de centro de ${subject}`,
+      });
+      await this.notifier.notify({
+        to: { accountIds: [request.requestedBy] },
+        kind: "catechesis.center_transfer_rejected",
+        title: "Mudança de centro recusada",
+        body:
+          input.note?.trim() ||
+          `A coordenação de ${centerRef(request.fromCenterId).name} não autorizou a mudança.`,
+        link: "/portal",
+        exceptAccountId: input.actorId,
+      });
+      return;
+    }
+    request.forwardFromOrigin(input.actorId, now, input.note);
+    await this.activity.record({
+      actorId: input.actorId,
+      category: "CATECHISTS",
+      action: "catechesis.center_transfer_forwarded",
+      summary: `Encaminhou a mudança de centro de ${subject} para ${centerRef(request.toCenterId).name}`,
+    });
+    await this.notifier.notify({
+      to: { accountIds: [request.requestedBy] },
+      kind: "catechesis.center_transfer_forwarded",
+      title: "Pedido encaminhado",
+      body: `A coordenação de ${centerRef(request.fromCenterId).name} autorizou. Agora ${centerRef(request.toCenterId).name} analisa se aceita.`,
+      link: "/portal",
+      exceptAccountId: input.actorId,
+    });
+    // Segundo passo: agora decide a coordenação do centro de destino.
+    await this.notifier.notify({
+      to: { accountIds: await this.people.coordinationOfCenter(request.toCenterId) },
+      kind: "catechesis.center_transfer_forwarded",
+      title: "Mudança de centro para aceitar",
+      body: `${subject} foi autorizado a sair de ${centerRef(request.fromCenterId).name}. ${centerRef(request.toCenterId).name} deve aceitar ou recusar.`,
+      link: "/dashboard/mudancas-centro",
+      exceptAccountId: input.actorId,
+    });
+  }
+
+  private async decideAtDestination(
+    request: CenterTransferRequest,
+    input: {
+      actorId: string;
+      decision: "APPROVED" | "REJECTED";
+      classId?: string;
+      role?: ClassCatechistRole;
+      note?: string;
+    },
+    now: Date,
+    subject: string,
+  ) {
+    if (input.decision === "REJECTED") {
+      request.reject(input.actorId, now, input.note);
+      await this.activity.record({
+        actorId: input.actorId,
+        category: "CATECHISTS",
+        action: "catechesis.center_transfer_rejected",
+        summary: `A coordenação de destino recusou a mudança de centro de ${subject}`,
+      });
+      await this.notifier.notify({
+        to: { accountIds: [request.requestedBy] },
+        kind: "catechesis.center_transfer_rejected",
+        title: "Mudança de centro recusada",
+        body:
+          input.note?.trim() ||
+          `A coordenação de ${centerRef(request.toCenterId).name} não aceitou a mudança.`,
+        link: "/portal",
+        exceptAccountId: input.actorId,
+      });
+      return;
+    }
+    if (request.kind === "CATECHUMEN") {
+      await this.approveCatechumen(request, input.actorId, now, input.classId, input.note);
+    } else {
+      await this.approveCatechist(
+        request,
+        input.actorId,
+        now,
+        input.classId,
+        input.role,
+        input.note,
+      );
+    }
+    await this.activity.record({
+      actorId: input.actorId,
+      category: "CATECHISTS",
+      action: "catechesis.center_transfer_approved",
+      summary: `Aceitou a mudança de centro de ${subject}`,
+    });
+    await this.notifier.notify({
+      to: { accountIds: [request.requestedBy] },
+      kind: "catechesis.center_transfer_approved",
+      title: "Mudança de centro aceite",
+      body: `Já frequenta ${centerRef(request.toCenterId).name}.`,
+      link: "/portal",
+      exceptAccountId: input.actorId,
     });
   }
 
@@ -509,7 +683,9 @@ export class DecideCenterTransferUseCase {
       const dest = await this.classes.findById(UniqueId.from(classId));
       if (!dest) throw new ClassNotFoundError();
       if (dest.centerId !== request.toCenterId || dest.catecheticalYear !== calendar.label) {
-        throw new InvalidCenterTransferError("A turma tem de ser do centro de destino e deste ano.");
+        throw new InvalidCenterTransferError(
+          "A turma tem de ser do centro de destino e deste ano.",
+        );
       }
       const chosen = role ?? (dest.lead ? ClassCatechistRole.ASSISTANT : ClassCatechistRole.LEAD);
       if (chosen === ClassCatechistRole.LEAD && dest.lead) {
@@ -553,9 +729,7 @@ export async function originStayOf(
     ? await classes.findById(UniqueId.from(request.fromClassId))
     : null;
   const entries =
-    klass && catechumenId
-      ? await attendance.listForCatechumen(klass.id.value, catechumenId)
-      : [];
+    klass && catechumenId ? await attendance.listForCatechumen(klass.id.value, catechumenId) : [];
   return {
     fromCenter: centerRef(request.fromCenterId),
     fromClass: klass
@@ -661,9 +835,15 @@ async function toTransferView(
   people: PeopleDirectory,
   catechumens: CatechumenRepository,
   classes: ClassRepository,
-  flags: { canDecide: boolean; canCancel: boolean },
+  flags: {
+    canDecide: boolean;
+    canCancel: boolean;
+    decisionStage?: "ORIGIN" | "DESTINATION";
+  },
 ): Promise<CenterTransferView> {
-  const ids = [request.requestedBy, request.decidedBy].filter((id): id is string => Boolean(id));
+  const ids = [request.requestedBy, request.originReviewedBy, request.decidedBy].filter(
+    (id): id is string => Boolean(id),
+  );
   const names = new Map((await people.findMany(ids)).map((person) => [person.id, person.fullName]));
   const [fromClass, toClass] = await Promise.all([
     request.fromClassId ? classes.findById(UniqueId.from(request.fromClassId)) : null,
@@ -688,11 +868,20 @@ async function toTransferView(
     toClass: toClass ? { id: toClass.id.value, label: classLabel(toClass) } : undefined,
     catechistRole: request.catechistRole,
     requestedAt: request.requestedAt.toISOString(),
+    originReviewedAt: request.originReviewedAt?.toISOString(),
+    originReviewedBy: request.originReviewedBy
+      ? {
+          id: request.originReviewedBy,
+          fullName: names.get(request.originReviewedBy) ?? "—",
+        }
+      : undefined,
+    originNote: request.originNote,
     decidedAt: request.decidedAt?.toISOString(),
     decidedBy: request.decidedBy
       ? { id: request.decidedBy, fullName: names.get(request.decidedBy) ?? "—" }
       : undefined,
     decisionNote: request.decisionNote,
+    decisionStage: flags.decisionStage,
     canDecide: flags.canDecide,
     canCancel: flags.canCancel,
   };

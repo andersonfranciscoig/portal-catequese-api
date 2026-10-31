@@ -34,4 +34,12 @@ export abstract class PeopleDirectory {
   abstract idsWithPermission(permission: NotifiedPermission): Promise<string[]>;
   /** Contas ativas com pelo menos um destes papéis, sem duplicados. */
   abstract listByRoles(roles: PersonSnapshot["roles"][number][]): Promise<PersonSnapshot[]>;
+  /**
+   * Coordenação que responde por um centro: a desse centro e a geral (paróquia).
+   * Por omissão (testes), toda a coordenação.
+   */
+  coordinationOfCenter(centerId: string): Promise<string[]> {
+    void centerId;
+    return this.idsWithPermission("COORDINATION");
+  }
 }

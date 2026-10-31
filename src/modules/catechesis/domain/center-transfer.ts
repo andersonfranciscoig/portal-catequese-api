@@ -1,7 +1,7 @@
 import { AggregateRoot } from "../../../shared/domain/aggregate-root.js";
 import type { UniqueId } from "../../../shared/domain/unique-id.js";
 import type { CatechesisLevel } from "./catechesis.js";
-import { ClassCatechistRole } from "./catechesis.js";
+import type { ClassCatechistRole } from "./catechesis.js";
 import {
   CenterTransferAlreadyDecidedError,
   InvalidCenterTransferError,
@@ -10,14 +10,20 @@ import {
 export const CenterTransferKind = { CATECHUMEN: "CATECHUMEN", CATECHIST: "CATECHIST" } as const;
 export type CenterTransferKind = (typeof CenterTransferKind)[keyof typeof CenterTransferKind];
 
+/** Fluxo: origem analisa → destino aceita → concluído. */
 export const CenterTransferStatus = {
-  PENDING: "PENDING",
+  ORIGIN_REVIEW: "ORIGIN_REVIEW",
+  DESTINATION_REVIEW: "DESTINATION_REVIEW",
   APPROVED: "APPROVED",
   REJECTED: "REJECTED",
   CANCELLED: "CANCELLED",
 } as const;
-export type CenterTransferStatus =
-  (typeof CenterTransferStatus)[keyof typeof CenterTransferStatus];
+export type CenterTransferStatus = (typeof CenterTransferStatus)[keyof typeof CenterTransferStatus];
+
+export const OPEN_TRANSFER_STATUSES: CenterTransferStatus[] = [
+  "ORIGIN_REVIEW",
+  "DESTINATION_REVIEW",
+];
 
 export interface CenterTransferProps {
   kind: CenterTransferKind;
@@ -34,6 +40,11 @@ export interface CenterTransferProps {
   catechistAccountId?: string;
   catechistRole?: ClassCatechistRole;
   requestedAt: Date;
+  /** Coordenação de origem encaminhou para o destino. */
+  originReviewedAt?: Date;
+  originReviewedBy?: string;
+  originNote?: string;
+  /** Decisão final (destino: aceite/recusa; ou origem: recusa). */
   decidedAt?: Date;
   decidedBy?: string;
   decisionNote?: string;
@@ -69,7 +80,7 @@ export class CenterTransferRequest extends AggregateRoot<CenterTransferProps> {
     assertDifferentCenters(input.fromCenterId, input.toCenterId);
     return new CenterTransferRequest({
       kind: "CATECHUMEN",
-      status: "PENDING",
+      status: "ORIGIN_REVIEW",
       requestedBy: input.requestedBy,
       fromCenterId: input.fromCenterId,
       toCenterId: input.toCenterId,
@@ -96,7 +107,7 @@ export class CenterTransferRequest extends AggregateRoot<CenterTransferProps> {
     assertDifferentCenters(input.fromCenterId, input.toCenterId);
     return new CenterTransferRequest({
       kind: "CATECHIST",
-      status: "PENDING",
+      status: "ORIGIN_REVIEW",
       requestedBy: input.requestedBy,
       fromCenterId: input.fromCenterId,
       toCenterId: input.toCenterId,
@@ -156,6 +167,15 @@ export class CenterTransferRequest extends AggregateRoot<CenterTransferProps> {
   get requestedAt() {
     return this.props.requestedAt;
   }
+  get originReviewedAt() {
+    return this.props.originReviewedAt;
+  }
+  get originReviewedBy() {
+    return this.props.originReviewedBy;
+  }
+  get originNote() {
+    return this.props.originNote;
+  }
   get decidedAt() {
     return this.props.decidedAt;
   }
@@ -172,37 +192,68 @@ export class CenterTransferRequest extends AggregateRoot<CenterTransferProps> {
     return this.props.updatedAt;
   }
 
-  get isPending() {
-    return this.props.status === "PENDING";
+  /** Ainda em análise (origem ou destino). */
+  get isOpen() {
+    return OPEN_TRANSFER_STATUSES.includes(this.props.status);
   }
 
+  get awaitsOrigin() {
+    return this.props.status === "ORIGIN_REVIEW";
+  }
+
+  get awaitsDestination() {
+    return this.props.status === "DESTINATION_REVIEW";
+  }
+
+  /** A coordenação de origem encaminha para o destino. */
+  forwardFromOrigin(actorId: string, now: Date, note?: string) {
+    if (!this.awaitsOrigin) throw new CenterTransferAlreadyDecidedError();
+    this.props.status = "DESTINATION_REVIEW";
+    this.props.originReviewedBy = actorId;
+    this.props.originReviewedAt = now;
+    this.props.originNote = note?.trim() || undefined;
+    this.props.updatedAt = now;
+  }
+
+  /** Aceite final do centro de destino. */
   approve(
     actorId: string,
     now: Date,
     change: { toClassId?: string; catechistRole?: ClassCatechistRole; note?: string },
   ) {
-    this.decide("APPROVED", actorId, now, change.note);
+    if (!this.awaitsDestination) throw new CenterTransferAlreadyDecidedError();
+    this.props.status = "APPROVED";
+    this.props.decidedBy = actorId;
+    this.props.decidedAt = now;
+    this.props.decisionNote = change.note?.trim() || undefined;
     this.props.toClassId = change.toClassId;
     this.props.catechistRole = change.catechistRole;
+    this.props.updatedAt = now;
   }
 
+  /** Recusa na origem ou no destino. */
   reject(actorId: string, now: Date, note?: string) {
-    this.decide("REJECTED", actorId, now, note);
+    if (!this.isOpen) throw new CenterTransferAlreadyDecidedError();
+    if (this.awaitsOrigin) {
+      this.props.originReviewedBy = actorId;
+      this.props.originReviewedAt = now;
+      this.props.originNote = note?.trim() || undefined;
+    }
+    this.props.status = "REJECTED";
+    this.props.decidedBy = actorId;
+    this.props.decidedAt = now;
+    this.props.decisionNote = note?.trim() || undefined;
+    this.props.updatedAt = now;
   }
 
   cancel(actorId: string, now: Date) {
     if (actorId !== this.props.requestedBy) {
       throw new InvalidCenterTransferError("Só quem pediu pode cancelar este pedido.");
     }
-    this.decide("CANCELLED", actorId, now);
-  }
-
-  private decide(status: "APPROVED" | "REJECTED" | "CANCELLED", actorId: string, now: Date, note?: string) {
-    if (!this.isPending) throw new CenterTransferAlreadyDecidedError();
-    this.props.status = status;
+    if (!this.isOpen) throw new CenterTransferAlreadyDecidedError();
+    this.props.status = "CANCELLED";
     this.props.decidedBy = actorId;
     this.props.decidedAt = now;
-    this.props.decisionNote = note?.trim() || undefined;
     this.props.updatedAt = now;
   }
 }
